@@ -1092,14 +1092,39 @@ Extracted artifacts may be malicious. Treat extracted files as untrusted.
 - No first-class full stream reassembly workflow.
 - Simple HTML report only.
 - Basic timeline output.
+- Timeline/event timestamps should be verified on challenging captures until V2.3 timestamp hardening is implemented.
 - Protocol extraction depends on TShark exposing fields.
 - Raw file artifact hits are noisy.
+- Artifact certainty does not yet prove that a carved object is complete, decodable, or the full transferred file.
+- Packet-local artifacts can be fragments of larger HTTP, TFTP, MQTT, or stream data.
 - Redaction flags exist, but redaction behavior is not implemented yet.
 - Zeek and Suricata are only checked by `doctor`, not orchestrated.
 
 ## Planned Features Not Yet Implemented
 
 These are planned or proposed. They should not be described as implemented behavior.
+
+### V2.3 Trust And Output Hardening
+
+- Fix timeline timestamp handling and unknown-time display.
+- Add artifact completeness/truncation/source-scope metadata.
+- Separate magic-header, structure, and complete-file validation.
+- Track skipped extraction reasons.
+- Report HTTP object export separately from artifact carving.
+- Recommend `--include-raw` when raw carving is required.
+- Group rejected artifacts by type and reason in default stdout.
+- Keep detailed rejected offsets in JSON or verbose output.
+- Reduce speculative decoded-string noise.
+- Make `search` and `strings --grep` use consistent source behavior or source filters.
+
+### V2.4 Protocol Views And Reassembly
+
+- DNS clustering, ranking, and encoded-label grouping.
+- HTTP stream/object grouping and short-response ranking.
+- MQTT topic/message/payload view and export.
+- TFTP transfer grouping and object export with completeness metadata.
+- UDP conversation ranking for non-TCP workflows.
+- ICMP trail summaries with payload/covert-channel hints.
 
 ### External Tool Integrations
 
@@ -1126,6 +1151,10 @@ These are planned or proposed. They should not be described as implemented behav
 ### Analysis Features
 
 - Full stream reassembly.
+- TFTP object reassembly/export.
+- MQTT message and payload export.
+- DNS encoded-label grouping.
+- USB/HID keyboard triage or precise handoff.
 - Deeper TLS analysis.
 - Advanced ICMP covert-channel detection.
 - More flexible custom flag matching.
@@ -1135,6 +1164,10 @@ These are planned or proposed. They should not be described as implemented behav
 
 ### Decoder Features
 
+- CTF decoder hints before full auto-solving.
+- ROT13 clue detection.
+- Base64/base32/hex grouping for DNS labels.
+- Base85 hints for MQTT or nearby clue text.
 - XOR brute force.
 - gzip/zlib/deflate/brotli decoding.
 - Recursive archive/content decoding.

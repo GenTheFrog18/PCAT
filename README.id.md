@@ -64,6 +64,12 @@ Setiap command mendukung `--json` untuk automation dan handoff ke tim.
 - Report JSON memakai `report.json`, `stories.json`, dan `evidence.json`; export CSV mencakup flows, hosts, DNS, HTTP, artifacts, dan findings.
 - Command rekomendasi sudah aman untuk path yang mengandung spasi.
 
+## Batasan Saat Ini
+
+- Certainty artifact adalah label triage, bukan jaminan bahwa hasil carving lengkap atau bisa dibuka.
+- Timeline, stream reassembly, export TFTP, export payload MQTT, decoding USB HID, dan decoder CTF yang lebih dalam masih rencana.
+- PCAT sebaiknya dipakai sebagai tool briefing dan handoff bersama Wireshark/TShark dan tool spesialis lain.
+
 ## Dokumentasi
 
 - [docs/reference/PCAT_ARCHITECTURE.md](docs/reference/PCAT_ARCHITECTURE.md): filosofi produk, arsitektur, keputusan desain, model kontribusi, dan scope implementasi/rencana.

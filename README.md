@@ -64,6 +64,12 @@ Every command supports `--json` for automation and teammate handoff.
 - JSON reports use `report.json`, `stories.json`, and `evidence.json`; CSV exports include flows, hosts, DNS, HTTP, artifacts, and findings.
 - Copy-paste-safe generated commands for paths containing spaces.
 
+## Current Limits
+
+- Artifact certainty is a triage label, not a guarantee that a carved object is complete or decodable.
+- Timeline, stream reassembly, TFTP export, MQTT payload export, USB HID decoding, and deeper CTF decoders are planned improvements.
+- PCAT should be used as a briefing and handoff tool beside Wireshark/TShark and other specialist tools.
+
 ## Documentation
 
 - [docs/reference/PCAT_ARCHITECTURE.md](docs/reference/PCAT_ARCHITECTURE.md): product philosophy, architecture, design decisions, contribution model, and implemented vs planned scope.

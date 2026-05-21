@@ -713,7 +713,10 @@ find sample.pcap-pcat/sample -maxdepth 2 -type f | sort
 - PCAT lets TShark decide capture parseability; if TShark cannot parse a file, PCAT reports guidance based on the detected input type.
 - ML scoring is skipped if `scikit-learn` is missing.
 - Artifact carving is best-effort and can produce false positives.
+- Artifact certainty does not yet prove that the carved object is complete or decodable.
 - Raw-file artifact hits are noisier than packet-payload hits; check validation before trusting them.
+- Timeline output and event ordering should be verified manually on challenging captures.
+- Full stream reassembly, TFTP export, MQTT payload export, USB HID decoding, and deeper CTF decoder hints are planned improvements.
 - Some protocol fields may not appear depending on the PCAP and `tshark` version.
 - Zeek and Suricata orchestration are planned for a later integration milestone, not required for the V2 baseline.
 - No redaction by default.

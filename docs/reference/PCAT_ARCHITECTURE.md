@@ -296,15 +296,43 @@ Implemented PCAT still has boundaries:
 - It does not provide a GUI.
 - It does not reassemble full streams as a first-class workflow.
 - Timeline events are basic.
+- Timeline/event ordering may need verification against packet timestamps on challenging captures.
 - HTML output is readable but simple.
 - Zeek and Suricata are detected but not orchestrated yet.
 - Raw artifact hits can be noisy.
+- Artifact certainty is a triage label, not a guarantee that a carved object is complete or decodable.
+- Packet-local artifacts may be fragments of a larger stream or transfer.
 - Some protocol fields depend on what TShark exposes for that capture.
 - The tool can miss data hidden in protocols or encodings it does not parse yet.
 
 ## Planned Features
 
 Planned work should remain separate from implemented behavior in documentation and reports.
+
+### V2.3 Trust And Output Hardening
+
+Planned:
+
+- Fix timeline timestamp handling so unknown times are not presented as `0.000000`.
+- Separate artifact header validity, structure validity, completeness, truncation, and source scope.
+- Track skipped extraction reasons, including raw carving disabled, validation failed, missing source data, and HTTP object export separately.
+- Recommend `--include-raw` when a promoted artifact requires raw carving.
+- Group rejected artifacts by type/reason in default stdout.
+- Keep individual rejected offsets in JSON or verbose output.
+- Reduce speculative decoded-string and normal-infrastructure noise.
+- Make `search` and `strings --grep` source behavior consistent or explicitly source-filtered.
+- Keep default terminal output concise and analyst-facing.
+
+### V2.4 Protocol Views And Reassembly
+
+Planned:
+
+- DNS clustering and encoded-label grouping.
+- HTTP stream/object grouping and clearer object export accounting.
+- MQTT topic/message/payload table and export.
+- TFTP transfer grouping and object export with completeness metadata.
+- UDP conversation ranking for non-TCP workflows.
+- ICMP trail summaries with payload/covert-channel hints.
 
 ### Later Integration Layer
 
@@ -336,6 +364,10 @@ Planned:
 Planned:
 
 - Full stream reassembly workflow.
+- TFTP object reassembly/export.
+- MQTT payload view/export.
+- DNS encoded-label grouping.
+- USB/HID keyboard triage or precise handoff.
 - More complete decoder engine.
 - XOR, gzip, zlib, deflate, brotli, recursive archive/content decoding, and JWT parsing.
 - Deeper TLS analysis.
