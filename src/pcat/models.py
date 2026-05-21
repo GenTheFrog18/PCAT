@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any
 
 
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = "0.2.2"
 
 
 @dataclass
@@ -228,6 +228,7 @@ class ArtifactRecord:
     sha256: str = ""
     path: str = ""
     validation: str = "signature_only"
+    certainty: str = "candidate"
     encrypted: bool = False
     members: list[str] = field(default_factory=list)
     manifest_path: str = ""
@@ -286,6 +287,29 @@ class TimelineEvent:
 
 
 @dataclass
+class EvidenceStory:
+    id: str
+    kind: str
+    title: str
+    why_it_matters: str
+    severity: str = "info"
+    confidence: str = "medium"
+    supporting_evidence_ids: list[str] = field(default_factory=list)
+    anchors: dict[str, Any] = field(default_factory=dict)
+    recommended_next_command: str = ""
+    limitations: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AnalystBriefing:
+    capture_type: str
+    top_hooks: list[str] = field(default_factory=list)
+    top_risks: list[str] = field(default_factory=list)
+    limitations: list[str] = field(default_factory=list)
+    recommended_next_commands: list[str] = field(default_factory=list)
+
+
+@dataclass
 class CaptureSummary:
     file: str
     size_bytes: int
@@ -307,6 +331,8 @@ class AnalysisReport:
     schema_version: str = SCHEMA_VERSION
     capture: CaptureRecord | None = None
     tools: list[ToolRun] = field(default_factory=list)
+    briefing: AnalystBriefing | None = None
+    stories: list[EvidenceStory] = field(default_factory=list)
     hosts: list[dict[str, Any]] = field(default_factory=list)
     conversations: list[dict[str, Any]] = field(default_factory=list)
     evidence: list[EvidenceRecord] = field(default_factory=list)

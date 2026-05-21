@@ -9,13 +9,13 @@ For architectural goals and design philosophy, see `PCAT_ARCHITECTURE.md`.
 Current PCAT version:
 
 ```text
-0.2.1
+0.2.2
 ```
 
 Current report schema version:
 
 ```text
-0.2
+0.2.2
 ```
 
 Required runtime:
@@ -121,6 +121,31 @@ PCAT uses typed errors with these exit codes:
 - `5`: report writing error.
 - `130`: interrupted by user.
 
+## Analyst Briefing And Stories
+
+V2.2 adds first-read guidance above raw evidence.
+
+`briefing` appears in `report.json`, `summary --json`, and terminal output. It includes:
+
+- capture type
+- top hooks
+- top risks
+- limitations
+- recommended next commands
+
+`stories` appears in `report.json` and `stories.json`. Story records include:
+
+- story ID
+- kind
+- title
+- why it matters
+- severity
+- confidence
+- supporting evidence IDs
+- anchors
+- recommended next command
+- limitations
+
 ## Output Folder Rules
 
 If output is requested and `-o/--out` is not provided, PCAT writes to:
@@ -148,6 +173,7 @@ When report generation is requested, PCAT can write:
 
 - `report.json`: complete structured report.
 - `evidence.json`: normalized evidence records only.
+- `stories.json`: grouped evidence stories only.
 - `findings.json`: findings only.
 - `report.html`: simple HTML report.
 - `report.md`: Markdown report.
@@ -342,6 +368,7 @@ Tracks detected and extracted file-like objects:
 - size
 - SHA256
 - path
+- certainty
 - validation
 - encrypted flag
 - member list
@@ -350,6 +377,12 @@ Tracks detected and extracted file-like objects:
 - tags
 - score
 - reasons
+
+Artifact certainty values:
+
+- `confirmed`: structure validation succeeded.
+- `candidate`: signature was observed, but PCAT cannot fully validate the structure.
+- `rejected`: magic bytes matched, but structure validation failed; extraction is skipped.
 
 ### `EvidenceRecord`
 
@@ -608,8 +641,9 @@ Shows:
 - Protocol counts.
 - Top hosts.
 - Top ports.
+- Analyst briefing.
 
-JSON mode includes schema version, capture metadata, summary, and warnings.
+JSON mode includes schema version, capture metadata, summary, briefing, stories, and warnings.
 
 ### `pcat streams`
 
@@ -766,6 +800,7 @@ Shows:
 - Source.
 - Offset.
 - Score.
+- Certainty.
 - Validation.
 - Tags.
 - Reasons.
@@ -838,6 +873,7 @@ Shows:
 - Type.
 - Source.
 - Offset.
+- Certainty.
 - Validation.
 - Tags.
 - Reasons.
@@ -994,6 +1030,7 @@ Columns:
 - `path`
 - `size`
 - `sha256`
+- `certainty`
 - `validation`
 - `score`
 - `tags`

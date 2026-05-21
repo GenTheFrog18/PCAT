@@ -51,16 +51,17 @@ Every command supports `--json` for automation and teammate handoff.
 - TShark-authority input handling with clearer guidance for archives, HTML/download placeholders, gzip files, and invalid captures.
 - Capture metadata with SHA256, capinfos data when available, and protocol hierarchy.
 - Structured evidence records with stable IDs, confidence, previews, frame/stream anchors, and handoff filters.
+- Analyst briefing and evidence stories that summarize what matters first, what is limited, and what command to run next.
 - Safer parser behavior for large HTTP/multipart captures.
 - TCP/UDP payload string extraction, including Raw IPv4 TCP payloads.
 - CTF hunt support for flags, credentials, clue strings, short base64 fragments, timestamp-order reconstruction, and SYN packets carrying payload.
 - HTTP transfer triage using request/response metadata, content type, content length, and large upload/download hints.
 - SMTP and MQTT evidence surfacing when TShark exposes those fields.
 - Broader DNS extraction for common answer types such as A, AAAA, CNAME, PTR, NS, MX, and TXT where TShark exposes them.
-- Magic-byte artifact detection with validation states such as `validated`, `signature_only`, and `invalid`.
+- Magic-byte artifact detection with certainty labels: `confirmed`, `candidate`, or `rejected`.
 - Artifact manager output with `artifacts/manifest.json`; default extraction focuses on packet payload artifacts and raw carving is opt-in.
 - Safer extraction: `--limit` limits actual writes, invalid artifacts are skipped, and raw carving is bounded.
-- JSON reports use `report.json` and `evidence.json`; CSV exports include flows, hosts, DNS, HTTP, artifacts, and findings.
+- JSON reports use `report.json`, `stories.json`, and `evidence.json`; CSV exports include flows, hosts, DNS, HTTP, artifacts, and findings.
 - Copy-paste-safe generated commands for paths containing spaces.
 
 ## Documentation

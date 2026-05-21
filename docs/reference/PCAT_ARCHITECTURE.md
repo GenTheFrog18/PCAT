@@ -124,11 +124,12 @@ The full `analyze` pipeline works like this:
 9. Build the investigation queue and handoff hints.
 10. Build timeline events.
 11. Build normalized evidence records and link findings to evidence.
-12. Render terminal output or write selected report files.
+12. Build evidence stories and the analyst briefing.
+13. Render terminal output or write selected report files.
 
 ## Primary Data Model
 
-The schema version is currently `0.2`.
+The schema version is currently `0.2.2`.
 
 Implemented model groups:
 
@@ -138,8 +139,10 @@ Implemented model groups:
 - `FlowRecord`: bidirectional host/port/protocol conversation summary.
 - `StreamRecord`: TCP stream/conversation summary when stream IDs exist.
 - `DnsRecord`, `HttpRecord`, `SmtpRecord`, `MqttRecord`: protocol-specific records.
-- `ArtifactRecord`: file signature, validation, score, extraction, hash, and manifest metadata.
+- `ArtifactRecord`: file signature, certainty, validation, score, extraction, hash, and manifest metadata.
 - `EvidenceRecord`: normalized evidence with stable ID, source module, confidence, anchors, preview, fields, and handoff filters.
+- `EvidenceStory`: grouped analyst narrative linked to supporting evidence.
+- `AnalystBriefing`: first-read capture type, hooks, risks, limitations, and next commands.
 - `Finding`: human-readable issue or clue linked to evidence.
 - `InvestigationItem`: prioritized next-step queue.
 - `HandoffHint`: Wireshark/tcpdump style commands or filters.
@@ -214,7 +217,7 @@ Implemented artifact behavior:
 
 - Detect signatures in packet payloads and optionally raw PCAP bytes.
 - Validate known structures where possible.
-- Mark artifacts as `validated`, `signature_only`, or `invalid`.
+- Mark artifacts as `confirmed`, `candidate`, or `rejected`, while preserving technical validation states.
 - Score artifacts by type, source, validation, and tags.
 - Skip invalid artifacts during extraction.
 - Hash extracted artifacts with SHA256.

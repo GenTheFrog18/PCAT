@@ -22,6 +22,9 @@ def render_terminal(report: AnalysisReport, top: int = 10) -> str:
     lines.append(f"Packets: {s.packet_count:,}")
     lines.append(f"Duration: {s.duration:.2f}s")
     lines.append("")
+    lines.extend(render_briefing(report, top))
+    lines.extend(render_stories(report, top))
+    lines.append("")
     lines.append(f"Showing top {top} results in terminal output. Use --top N to change this.")
     lines.append("")
     lines.extend(section_counter("Protocols", s.protocols, top))
@@ -62,6 +65,47 @@ def section_counter(title: str, values: dict[str, int], top: int) -> list[str]:
     width = max([len(str(k)) for k in list(values)[:top]] + [4])
     for key, value in list(values.items())[:top]:
         lines.append(f"{str(key):<{width}}  {value}")
+    return lines
+
+
+def render_briefing(report: AnalysisReport, top: int = 10) -> list[str]:
+    if not report.briefing:
+        return []
+    briefing = report.briefing
+    lines = ["", "Analyst Briefing", "-" * 17]
+    lines.append(f"Capture type: {briefing.capture_type}")
+    if briefing.top_hooks:
+        lines.append("Top hooks:")
+        for idx, item in enumerate(briefing.top_hooks[:top], start=1):
+            lines.append(f"  {idx}. {item}")
+    if briefing.top_risks:
+        lines.append("Top risks:")
+        for idx, item in enumerate(briefing.top_risks[:top], start=1):
+            lines.append(f"  {idx}. {item}")
+    if briefing.limitations:
+        lines.append("Limits:")
+        for item in briefing.limitations[:top]:
+            lines.append(f"  - {item}")
+    if briefing.recommended_next_commands:
+        lines.append("Recommended next:")
+        for item in briefing.recommended_next_commands[:top]:
+            lines.append(f"  - {item}")
+    return lines
+
+
+def render_stories(report: AnalysisReport, top: int = 10) -> list[str]:
+    if not report.stories:
+        return []
+    lines = ["", "Top Evidence Stories", "-" * 20]
+    for idx, story in enumerate(report.stories[:top], start=1):
+        lines.append(f"{idx}. [{story.severity}] {story.title}")
+        lines.append(f"   Why: {story.why_it_matters}")
+        if story.supporting_evidence_ids:
+            lines.append(f"   Evidence IDs: {', '.join(story.supporting_evidence_ids[:5])}")
+        if story.recommended_next_command:
+            lines.append(f"   Next: {story.recommended_next_command}")
+        for limitation in story.limitations[:2]:
+            lines.append(f"   Limit: {limitation}")
     return lines
 
 
@@ -132,6 +176,9 @@ def write_reports(report: AnalysisReport, out_dir: Path, formats: set[str]) -> l
             evidence_path = out_dir / "evidence.json"
             evidence_path.write_text(json.dumps(to_plain(report.evidence), indent=2), encoding="utf-8")
             written.append(evidence_path)
+            stories_path = out_dir / "stories.json"
+            stories_path.write_text(json.dumps(to_plain(report.stories), indent=2), encoding="utf-8")
+            written.append(stories_path)
         if "csv" in formats:
             for name, writer in [
                 ("flows.csv", write_flows_csv),
@@ -221,7 +268,7 @@ def write_http_csv(report: AnalysisReport, path: Path) -> None:
 def write_artifacts_csv(report: AnalysisReport, path: Path) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["artifact_id", "kind", "source", "offset", "filename", "path", "size", "sha256", "validation", "score", "tags"])
+        writer.writerow(["artifact_id", "kind", "source", "offset", "filename", "path", "size", "sha256", "certainty", "validation", "score", "tags"])
         for artifact in report.artifacts:
             writer.writerow([
                 artifact.artifact_id,
@@ -232,6 +279,7 @@ def write_artifacts_csv(report: AnalysisReport, path: Path) -> None:
                 artifact.path,
                 artifact.size,
                 artifact.sha256,
+                artifact.certainty,
                 artifact.validation,
                 artifact.score,
                 ";".join(artifact.tags),
@@ -270,11 +318,50 @@ def render_markdown(report: AnalysisReport) -> str:
         f"- Duration: `{s.duration:.2f}s`",
         f"- Findings: `{len(report.findings)}`",
         f"- Artifacts: `{len(report.artifacts)}`",
+        f"- Stories: `{len(report.stories)}`",
         f"- Evidence records: `{len(report.evidence)}`",
+        "",
+        "## Analyst Briefing",
+        "",
+    ]
+    if report.briefing:
+        lines.append(f"- Capture type: {report.briefing.capture_type}")
+        for hook in report.briefing.top_hooks:
+            lines.append(f"- Hook: {hook}")
+        for risk in report.briefing.top_risks:
+            lines.append(f"- Risk: {risk}")
+        for limitation in report.briefing.limitations:
+            lines.append(f"- Limit: {limitation}")
+        for command in report.briefing.recommended_next_commands:
+            lines.append(f"- Next: `{command}`")
+    else:
+        lines.append("No analyst briefing was generated.")
+    lines.extend([
+        "",
+        "## Evidence Stories",
+        "",
+    ])
+    if report.stories:
+        for story in report.stories:
+            lines.append(f"### {story.title}")
+            lines.append(f"- Kind: `{story.kind}`")
+            lines.append(f"- Severity: `{story.severity}`")
+            lines.append(f"- Confidence: `{story.confidence}`")
+            lines.append(f"- Why: {story.why_it_matters}")
+            if story.supporting_evidence_ids:
+                lines.append(f"- Evidence IDs: `{', '.join(story.supporting_evidence_ids[:10])}`")
+            if story.recommended_next_command:
+                lines.append(f"- Next: `{story.recommended_next_command}`")
+            for limitation in story.limitations:
+                lines.append(f"- Limit: {limitation}")
+            lines.append("")
+    else:
+        lines.append("No evidence stories were generated.")
+    lines.extend([
         "",
         "## Investigation Queue",
         "",
-    ]
+    ])
     if report.investigation_queue:
         for idx, item in enumerate(report.investigation_queue, start=1):
             lines.append(f"{idx}. **{item.reason}** [{item.priority}] - {item.suggested_action}")

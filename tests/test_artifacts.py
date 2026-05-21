@@ -10,6 +10,7 @@ def test_detect_artifact_magic_raw_file(tmp_path):
     assert artifacts
     assert artifacts[0].kind == "pdf"
     assert artifacts[0].source == "raw-file"
+    assert artifacts[0].certainty == "confirmed"
 
 
 def test_extract_artifact(tmp_path):
@@ -36,8 +37,19 @@ def test_invalid_artifact_is_not_extracted(tmp_path):
     sample.write_bytes(b"noise\x1f\x8bnot-a-real-gzip")
     artifacts = detect_artifacts(sample, include_raw=True)
     assert artifacts[0].validation == "invalid"
+    assert artifacts[0].certainty == "rejected"
     saved = extract_artifacts(sample, artifacts, tmp_path / "artifacts")
     assert saved == []
+    assert artifacts[0].extraction_status == "skipped_invalid"
+
+
+def test_signature_only_artifact_is_candidate(tmp_path):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"noiseRar!\x1a\x07\x00payload")
+    artifacts = detect_artifacts(sample, include_raw=True)
+    assert artifacts[0].kind == "rar"
+    assert artifacts[0].validation == "signature_only"
+    assert artifacts[0].certainty == "candidate"
 
 
 def test_write_artifact_manifest(tmp_path):

@@ -23,7 +23,7 @@ from .artifacts import detect_artifacts, extract_artifacts, score_artifact, writ
 from .evidence import build_report_evidence
 from .errors import InvalidArgumentError, PCATError
 from .models import to_plain
-from .reports import render_terminal, write_reports
+from .reports import render_briefing, render_terminal, write_reports
 from .stringtools import (
     decode_interesting,
     detect_credentials,
@@ -32,6 +32,7 @@ from .stringtools import (
     raw_file_strings,
     strings_from_payload_hex,
 )
+from .stories import build_briefing, build_stories
 from .tshark_parser import parse_packets
 from .utils import default_output_dir, prepare_output_dir, tool_version, validate_input
 
@@ -100,7 +101,7 @@ Command help:
   pcat help analyze
 """,
     )
-    parser.add_argument("--version", action="version", version="PCAT 0.2.1")
+    parser.add_argument("--version", action="version", version="PCAT 0.2.2")
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", title="commands")
 
     add_analyze(sub)
@@ -499,15 +500,19 @@ def cmd_analyze(args) -> int:
         payload_rows, payload_map = payload_sources(packets)
         found_count = len(report.artifacts)
         candidates = report.artifacts if args.include_raw_artifacts else [item for item in report.artifacts if item.source != "raw-file"]
+        selected = sorted(candidates, key=lambda item: item.score, reverse=True)[: max(0, args.extract_limit)]
         saved = extract_artifacts(path, candidates, artifacts_dir, payload_map, limit=args.extract_limit)
-        write_artifact_manifest(saved, artifacts_dir)
-        report.artifacts = saved or report.artifacts
+        write_artifact_manifest(selected, artifacts_dir)
         if saved:
             strings = gather_strings(path, payload_rows, include_raw=True)
             build_report_evidence(report, packets, strings)
+            report.stories = build_stories(report, packets)
+            report.briefing = build_briefing(report, packets)
         if not args.quiet and not args.json:
+            counts = artifact_certainty_counts(selected)
             print(f"Artifacts found: {found_count}")
             print(f"Artifacts selected for extraction: {min(len(candidates), args.extract_limit)}")
+            print(f"Selected certainty: confirmed={counts['confirmed']} candidate={counts['candidate']} rejected={counts['rejected']}")
             print(f"Artifacts extracted: {len(saved)}")
     if output_dir and file_formats:
         written = write_reports(report, output_dir, file_formats)
@@ -524,8 +529,12 @@ def cmd_analyze(args) -> int:
 def cmd_summary(args) -> int:
     report = analyze(resolve_input(args), AnalyzeOptions(no_ml=True, min_risk=0))
     if args.json:
-        print_json({"schema_version": report.schema_version, "capture": report.capture, "summary": report.summary, "warnings": report.warnings})
+        print_json({"schema_version": report.schema_version, "capture": report.capture, "summary": report.summary, "briefing": report.briefing, "stories": report.stories[: args.top], "warnings": report.warnings})
         return 0
+    for line in render_briefing(report, args.top):
+        print(line)
+    if report.briefing:
+        print("")
     print_summary(report, args.top)
     return 0
 
@@ -678,7 +687,7 @@ def cmd_files(args) -> int:
     print("-" * 14)
     ranked = sorted(artifacts, key=lambda a: a.score, reverse=True)
     for idx, artifact in enumerate(ranked[: args.limit], start=1):
-        print(f"{idx}. type={artifact.kind} source={artifact.source} offset={artifact.offset} score={artifact.score} validation={artifact.validation} tags={','.join(artifact.tags)} reason={'; '.join(artifact.reasons)}")
+        print(f"{idx}. certainty={artifact.certainty} type={artifact.kind} source={artifact.source} offset={artifact.offset} score={artifact.score} validation={artifact.validation} tags={','.join(artifact.tags)} reason={'; '.join(artifact.reasons)}")
     if len(ranked) > args.limit:
         print(f"... and {len(ranked) - args.limit} more. Use --top/--limit to change this.")
     return 0
@@ -698,7 +707,7 @@ def cmd_artifacts(args) -> int:
     print("-" * 9)
     for idx, artifact in enumerate(ranked[: args.limit], start=1):
         status = artifact.extraction_status or "not-extracted"
-        print(f"{idx}. score={artifact.score} type={artifact.kind} source={artifact.source} offset={artifact.offset} validation={artifact.validation} status={status} tags={','.join(artifact.tags)}")
+        print(f"{idx}. score={artifact.score} certainty={artifact.certainty} type={artifact.kind} source={artifact.source} offset={artifact.offset} validation={artifact.validation} status={status} tags={','.join(artifact.tags)}")
         if artifact.reasons:
             print(f"   reason={'; '.join(artifact.reasons)}")
     if len(ranked) > args.limit:
@@ -713,21 +722,26 @@ def cmd_extract(args) -> int:
     artifacts = load_artifacts_for_command(path, include_raw, not args.no_payloads)
     _, payload_map = payload_sources(parse_packets(path)) if not args.no_payloads else ([], {})
     ranked = sorted(artifacts, key=lambda a: a.score, reverse=True)
+    selected = ranked[: max(0, args.limit)]
     saved = extract_artifacts(path, ranked, out / "artifacts", payload_map, limit=args.limit)
-    manifest = write_artifact_manifest(saved, out / "artifacts")
+    manifest = write_artifact_manifest(selected, out / "artifacts")
+    counts = artifact_certainty_counts(selected)
     if args.http:
         run_tshark_export_http(path, out)
     if args.json:
-        print_json({"output_dir": str(out), "manifest": str(manifest), "found": len(artifacts), "selected": min(len(ranked), args.limit), "extracted": saved})
-        return 0
-    if not saved:
-        print("No artifacts were extracted.")
+        print_json({"output_dir": str(out), "manifest": str(manifest), "found": len(artifacts), "selected": len(selected), "certainty_counts": counts, "extracted_count": len(saved), "extracted": saved})
         return 0
     print(f"Artifacts found: {len(artifacts)}")
-    print(f"Artifacts selected for extraction: {min(len(ranked), args.limit)}")
+    print(f"Artifacts selected for extraction: {len(selected)}")
+    print(f"Selected certainty: confirmed={counts['confirmed']} candidate={counts['candidate']} rejected={counts['rejected']}")
+    if not saved:
+        print("Artifacts extracted: 0")
+        print("No artifacts were extracted. Selected hits were rejected, missing source data, or otherwise not extractable.")
+        print(f"Manifest written to {manifest}")
+        return 0
     print(f"Artifacts extracted: {len(saved)} to {out / 'artifacts'}")
     for artifact in saved:
-        print(f"- {artifact.path} sha256={artifact.sha256} validation={artifact.validation}")
+        print(f"- {artifact.path} sha256={artifact.sha256} certainty={artifact.certainty} validation={artifact.validation}")
     return 0
 
 
@@ -748,11 +762,14 @@ def cmd_suspicious(args) -> int:
     print("Suspicious Artifacts")
     print("-" * 20)
     for idx, artifact in enumerate(ranked[: args.limit], start=1):
-        print(f"{idx}. score={artifact.score} type={artifact.kind} source={artifact.source} offset={artifact.offset} validation={artifact.validation} tags={','.join(artifact.tags)} reason={'; '.join(artifact.reasons)}")
+        print(f"{idx}. score={artifact.score} certainty={artifact.certainty} type={artifact.kind} source={artifact.source} offset={artifact.offset} validation={artifact.validation} tags={','.join(artifact.tags)} reason={'; '.join(artifact.reasons)}")
     print("")
     print("Next steps:")
-    print(f"- pcat extract -i {shlex.quote(str(path))} -o {shlex.quote(str(default_output_dir(path)))}")
-    print("- Run file/strings against extracted artifacts if needed.")
+    if has_extractable_artifacts(ranked):
+        print(f"- pcat extract -i {shlex.quote(str(path))} -o {shlex.quote(str(default_output_dir(path)))}")
+        print("- Run file/strings against extracted artifacts if needed.")
+    else:
+        print("- No extractable artifacts in this filtered set; inspect artifact metadata first.")
     return 0
 
 
@@ -808,14 +825,16 @@ def cmd_hunt(args) -> int:
     print("-" * 14)
     if artifacts:
         for artifact in sorted(artifacts, key=lambda a: a.score, reverse=True)[: args.limit]:
-            print(f"[{artifact.kind}] source={artifact.source} offset={artifact.offset} score={artifact.score}")
+            print(f"[{artifact.certainty} {artifact.kind}] source={artifact.source} offset={artifact.offset} score={artifact.score} validation={artifact.validation}")
     else:
         print("No common magic-byte file signatures detected.")
     print("")
     print("Recommended Next Steps")
     print("-" * 22)
-    if artifacts:
+    if has_extractable_artifacts(artifacts):
         print(f"- Extract artifacts: pcat extract -i {shlex.quote(str(path))} -o {shlex.quote(str(default_output_dir(path)))}")
+    elif artifacts:
+        print("- Artifact signatures were rejected by validation; inspect pcat artifacts output before attempting extraction.")
     if flags or creds:
         print(f"- Save strings: pcat strings -i {shlex.quote(str(path))} --output strings.txt")
     print(f"- Run full report: pcat analyze -i {shlex.quote(str(path))} --ctf --extract -o {shlex.quote(str(default_output_dir(path)))}")
@@ -830,7 +849,7 @@ def cmd_doctor(args) -> int:
         "purpose": "optional ML anomaly scoring",
     }
     result = {
-        "pcat_version": "0.2.1",
+        "pcat_version": "0.2.2",
         "python": sys.version.split()[0],
         "tools": tools,
         "python_packages": [optional_ml],
@@ -900,6 +919,18 @@ def load_artifacts_for_command(path: Path, include_raw: bool, include_payloads: 
         payloads = list(payload_map.items())
     artifacts = detect_artifacts(path, payloads, include_raw=include_raw)
     return [score_artifact(artifact) for artifact in artifacts]
+
+
+def has_extractable_artifacts(artifacts) -> bool:
+    return any(artifact.certainty != "rejected" for artifact in artifacts)
+
+
+def artifact_certainty_counts(artifacts) -> dict[str, int]:
+    counts = {"confirmed": 0, "candidate": 0, "rejected": 0}
+    for artifact in artifacts:
+        key = artifact.certainty if artifact.certainty in counts else "candidate"
+        counts[key] += 1
+    return counts
 
 
 def run_tshark_export_http(path: Path, out: Path) -> None:

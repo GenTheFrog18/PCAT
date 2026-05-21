@@ -34,6 +34,7 @@ from .stringtools import (
     raw_file_strings,
     strings_from_payload_hex,
 )
+from .stories import build_briefing, build_stories
 from .tshark_parser import parse_packets
 from .utils import tool_version
 
@@ -115,6 +116,8 @@ def analyze(path: Path, options: AnalyzeOptions | None = None) -> AnalysisReport
     report.handoff = collect_handoff(report.findings)
     report.timeline = build_timeline(report.findings)
     build_report_evidence(report, packets, strings)
+    report.stories = build_stories(report, packets)
+    report.briefing = build_briefing(report, packets)
     if not report.findings:
         report.notes.append("No findings were generated. This does not prove the capture is safe.")
     add_capture_notes(report, packets)
@@ -778,14 +781,22 @@ def decoded_payload_fragments(packets: list[PacketRecord]) -> list[tuple[PacketR
 def artifact_findings(artifacts: list[ArtifactRecord]) -> list[Finding]:
     findings = []
     for artifact in sorted(artifacts, key=lambda a: a.score, reverse=True)[:30]:
+        if artifact.certainty == "rejected":
+            continue
         if artifact.score < 20:
             continue
+        title = "Confirmed embedded artifact found" if artifact.certainty == "confirmed" else "Embedded artifact candidate found"
+        explanation = (
+            "A known file magic byte signature was detected and the file structure validated."
+            if artifact.certainty == "confirmed"
+            else "A known file magic byte signature was detected, but PCAT could not fully validate the file structure."
+        )
         findings.append(make_finding(
-            "Embedded file signature found",
+            title,
             "artifact",
             artifact.score,
-            [f"{artifact.kind} at offset {artifact.offset} in {artifact.source} ({artifact.validation}).", "; ".join(artifact.reasons + artifact.tags)],
-            "A known file magic byte signature was detected.",
+            [f"{artifact.kind} at offset {artifact.offset} in {artifact.source} ({artifact.certainty}/{artifact.validation}).", "; ".join(artifact.reasons + artifact.tags)],
+            explanation,
             "Run extract or inspect the artifact entry.",
             related=artifact.artifact_id,
         ))
@@ -967,12 +978,12 @@ def build_queue(findings: list[Finding], streams: list[StreamRecord], artifacts:
             handoff=finding.handoff,
         ))
     for artifact in sorted(artifacts, key=lambda a: a.score, reverse=True)[:5]:
-        if artifact.score >= 20:
+        if artifact.score >= 20 and artifact.certainty != "rejected":
             items.append(InvestigationItem(
                 priority=severity_from_score(artifact.score),
-                reason=f"Review {artifact.kind} artifact",
+                reason=f"Review {artifact.certainty} {artifact.kind} artifact",
                 related=artifact.artifact_id,
-                evidence_summary=f"{artifact.kind} at {artifact.source} offset {artifact.offset}",
+                evidence_summary=f"{artifact.kind} at {artifact.source} offset {artifact.offset} ({artifact.certainty}/{artifact.validation})",
                 suggested_action="Run extract or inspect the artifact metadata.",
             ))
     return items[:20]

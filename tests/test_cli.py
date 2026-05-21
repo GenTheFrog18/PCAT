@@ -73,3 +73,15 @@ def test_suspicious_accepts_top_alias(tmp_path, capsys):
     output = capsys.readouterr().out
     assert "Suspicious Artifacts" in output
     assert "validation=validated" in output
+
+
+def test_extract_reports_rejected_artifact_when_nothing_extracts(tmp_path, capsys):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"noise\x1f\x8bnot-a-real-gzip")
+    out = tmp_path / "case"
+    code = main(["extract", "-i", str(sample), "--include-raw", "--no-payloads", "-o", str(out)])
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "Artifacts extracted: 0" in output
+    assert "rejected=1" in output
+    assert "No artifacts were extracted" in output

@@ -160,9 +160,11 @@ def extract_artifacts(
             continue
         source_data = raw_data if artifact.source == "raw-file" else payload_map.get(artifact.source)
         if not source_data:
+            artifact.extraction_status = "skipped_missing_source"
             continue
         validate_artifact_record(artifact, source_data, sig)
         if artifact.validation == "invalid":
+            artifact.extraction_status = "skipped_invalid"
             continue
         counters[artifact.kind] = counters.get(artifact.kind, 0) + 1
         blob = carve_blob(source_data, artifact.offset, sig)
@@ -196,6 +198,7 @@ def write_artifact_manifest(artifacts: list[ArtifactRecord], artifacts_dir: Path
 def validate_artifact_record(artifact: ArtifactRecord, data: bytes, sig: Signature | None = None) -> ArtifactRecord:
     sig = sig or signature_for_kind(artifact.kind)
     if not sig:
+        update_certainty(artifact)
         return artifact
     blob = carve_blob(data, artifact.offset, sig)
     return validate_blob(artifact, blob)
@@ -244,6 +247,7 @@ def validate_blob(artifact: ArtifactRecord, blob: bytes) -> ArtifactRecord:
     except Exception:
         state = "invalid"
     artifact.validation = state
+    update_certainty(artifact)
     if state not in tags:
         tags.add(state)
     artifact.tags = sorted(tags)
@@ -262,6 +266,7 @@ def valid_bmp(blob: bytes) -> bool:
 
 
 def score_artifact(artifact: ArtifactRecord) -> ArtifactRecord:
+    update_certainty(artifact)
     score = 0
     reasons: list[str] = []
     high_value = {"zip", "pdf", "elf", "sqlite", "rar", "7z"}
@@ -303,6 +308,26 @@ def score_artifact(artifact: ArtifactRecord) -> ArtifactRecord:
     if artifact.kind in {"elf", "sqlite"}:
         score += 20
         reasons.append("unusual in normal browsing traffic")
+    if artifact.certainty == "confirmed":
+        reasons.append("confirmed artifact")
+    elif artifact.certainty == "candidate":
+        reasons.append("artifact candidate")
+    elif artifact.certainty == "rejected":
+        score = min(score, 10)
+        reasons.append("rejected candidate; extraction skipped")
     artifact.score = max(0, min(100, score))
     artifact.reasons = reasons
+    return artifact
+
+
+def certainty_from_validation(validation: str) -> str:
+    if validation == "validated":
+        return "confirmed"
+    if validation == "invalid":
+        return "rejected"
+    return "candidate"
+
+
+def update_certainty(artifact: ArtifactRecord) -> ArtifactRecord:
+    artifact.certainty = certainty_from_validation(artifact.validation)
     return artifact

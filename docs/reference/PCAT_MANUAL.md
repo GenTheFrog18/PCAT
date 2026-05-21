@@ -69,14 +69,15 @@ PCAT does not redact by default. Generated reports may contain passwords, tokens
 V2 adds evidence-first output and safer workspace behavior:
 
 - Every command supports `--json`.
-- `report.json` contains a schema version, capture metadata, tools, summary, hosts, conversations, streams, evidence, artifacts, findings, timeline, handoff, warnings, and errors.
+- `report.json` contains a schema version, capture metadata, tools, summary, briefing, stories, hosts, conversations, streams, evidence, artifacts, findings, timeline, handoff, warnings, and errors.
 - `evidence.json` contains normalized evidence records with stable IDs, confidence, frame/stream anchors, previews, and handoff filters.
+- `stories.json` contains grouped evidence stories for analyst-first review.
 - CSV export writes `flows.csv`, `hosts.csv`, `dns.csv`, `http.csv`, `artifacts.csv`, and `findings.csv`.
 - Artifact extraction writes `artifacts/manifest.json`.
 - Raw PCAP byte carving is opt-in for extraction because it is noisy; payload artifacts remain the default extraction target.
 - Large TShark fields should not crash normal parsing.
 - TCP/UDP payload strings are parsed directly when available.
-- Artifact hits include a validation state: `validated`, `signature_only`, or `invalid`.
+- Artifact hits include certainty: `confirmed`, `candidate`, or `rejected`, plus the technical validation state.
 - `extract --limit N` limits how many artifacts are actually written.
 - Invalid artifacts are not extracted.
 - Generated next-step commands quote paths that contain spaces.
@@ -202,6 +203,7 @@ Expected default report files when `-o` is provided without `-f`:
 report.html
 report.json
 evidence.json
+stories.json
 findings.json
 flows.csv
 hosts.csv
@@ -219,6 +221,7 @@ report.md
 report.txt
 report.json
 evidence.json
+stories.json
 findings.json
 flows.csv
 hosts.csv
@@ -490,6 +493,7 @@ Expected output:
 - Source, such as `raw-file` or `packet:<number>`.
 - Offset.
 - Suspicion score.
+- Certainty, such as `confirmed`, `candidate`, or `rejected`.
 - Validation state.
 - Tags, such as `validated`, `signature_only`, `invalid`, `encrypted`, or `office-macro`.
 - Reason.
@@ -548,8 +552,10 @@ Expected output folder:
 Expected metadata:
 
 - Number of artifacts found, selected, and extracted.
+- Selected certainty counts for confirmed, candidate, and rejected hits.
 - Extracted path.
 - SHA256 hash.
+- Certainty label.
 - Validation state.
 - Manifest entry.
 

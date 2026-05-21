@@ -22,6 +22,7 @@ def test_write_reports_emits_v2_json_and_csv_set(tmp_path):
         "report.json",
         "evidence.json",
         "findings.json",
+        "stories.json",
         "flows.csv",
         "hosts.csv",
         "dns.csv",
@@ -30,4 +31,6 @@ def test_write_reports_emits_v2_json_and_csv_set(tmp_path):
         "findings.csv",
     } <= names
     data = json.loads((tmp_path / "report.json").read_text())
-    assert data["schema_version"] == "0.2"
+    assert data["schema_version"] == "0.2.2"
+    assert "briefing" in data
+    assert "stories" in data
