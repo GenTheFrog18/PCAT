@@ -1,0 +1,6 @@
+# PCAT keeps runtime dependencies minimal.
+# Required external system dependency: tshark / Wireshark CLI tools.
+#
+# Optional:
+#   pip install scikit-learn>=1.4  # ML anomaly scoring
+#   pip install pytest>=8.0        # tests

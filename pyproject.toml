@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pcat"
+version = "0.2.0"
+description = "PCAP Assistant for Triage"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "PCAT Team" }
+]
+dependencies = []
+
+[project.optional-dependencies]
+ml = ["scikit-learn>=1.4"]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+pcat = "pcat.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
