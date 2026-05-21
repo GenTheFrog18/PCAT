@@ -40,6 +40,24 @@ def test_strings_command_no_payloads(tmp_path, capsys):
     assert "flag{demo}" in output
 
 
+def test_strings_invalid_regex_returns_invalid_argument(tmp_path, capsys):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"abc flag{demo}")
+    code = main(["strings", "-i", str(sample), "--no-payloads", "--grep", "["])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "Invalid regex pattern" in captured.err
+
+
+def test_search_invalid_regex_returns_invalid_argument(tmp_path, capsys):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"abc flag{demo}")
+    code = main(["search", "-i", str(sample), "[", "--regex", "--no-payloads"])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "Invalid regex pattern" in captured.err
+
+
 def test_input_conflict_returns_invalid_argument(tmp_path, capsys):
     sample = tmp_path / "sample.pcap"
     sample.write_bytes(b"abc")

@@ -9,7 +9,7 @@ For architectural goals and design philosophy, see `PCAT_ARCHITECTURE.md`.
 Current PCAT version:
 
 ```text
-0.2.0
+0.2.1
 ```
 
 Current report schema version:
@@ -29,7 +29,7 @@ Optional runtime tools:
 - `file`: extracted artifact type labels.
 - `7z`: checked by `doctor`; reserved for richer archive workflows.
 - `scikit-learn`: optional ML anomaly scoring.
-- Zeek and Suricata: checked by `doctor`; planned for V2.1 integration.
+- Zeek and Suricata: checked by `doctor`; planned for a later integration milestone.
 
 ## Installation
 
@@ -53,10 +53,25 @@ pytest
 
 ## Input Rules
 
-Supported input extensions:
+PCAT accepts files that TShark/Wireshark can parse. Common supported input forms:
 
 - `.pcap`
 - `.pcapng`
+- `.cap`
+- `.pcap.gz`
+- valid capture files with unusual extensions
+
+PCAT does not reject an input only because the extension is unusual. TShark/libwiretap is the parse authority.
+
+Archive handling:
+
+- `.zip`, `.7z`, `.rar`, `.tar`, and similar files are not unpacked automatically.
+- Extract archives first, then run PCAT on the contained capture.
+
+Failed-download handling:
+
+- HTML-looking files are reported as likely placeholder pages or failed downloads.
+- Download the raw capture and retry.
 
 Input can be passed explicitly:
 
@@ -704,6 +719,8 @@ Options:
 - `--no-raw`: skip raw PCAP byte scanning.
 - `--no-payloads`: skip packet payload scanning.
 
+Invalid regex patterns return invalid-argument exit code `2`.
+
 ### `pcat search`
 
 Searches extracted strings.
@@ -724,6 +741,8 @@ Options:
 - `--limit N`, `--top N`: maximum printed rows.
 - `--no-raw`: skip raw PCAP byte scanning.
 - `--no-payloads`: skip packet payload scanning.
+
+Invalid regex patterns return invalid-argument exit code `2`.
 
 ### `pcat files`
 
@@ -1107,7 +1126,7 @@ Main files:
 - `src/pcat/stringtools.py`: strings, search, flag detection, credential detection, decoders.
 - `src/pcat/reports.py`: terminal, Markdown, HTML, JSON, CSV writers.
 - `src/pcat/models.py`: dataclasses and schema.
-- `src/pcat/utils.py`: input validation, dependency versions, output folder handling.
+- `src/pcat/utils.py`: input validation, file classification, parse guidance, dependency versions, output folder handling.
 - `src/pcat/errors.py`: typed errors and exit codes.
 
 Tests:
@@ -1117,6 +1136,8 @@ Tests:
 - `tests/test_models.py`
 - `tests/test_stringtools.py`
 - `tests/test_tshark_parser.py`
+- `tests/test_utils.py`
+- `tests/test_analysis_v21.py`
 - `tests/test_v2_contract.py`
 
 ## Maintenance Checklist

@@ -1,6 +1,6 @@
 # PCAT Architecture And Product Philosophy
 
-PCAT means **PCAP Assistant for Triage**. It is an offline command-line tool for first-pass packet capture analysis. Its job is to help an analyst quickly understand what is inside a `.pcap` or `.pcapng`, identify what deserves attention, and produce structured evidence that can be handed to other tools or teammates.
+PCAT means **PCAP Assistant for Triage**. It is an offline command-line tool for first-pass packet capture analysis. Its job is to help an analyst quickly understand what is inside a TShark-readable capture, identify what deserves attention, and produce structured evidence that can be handed to other tools or teammates.
 
 PCAT is not meant to replace Wireshark, TShark, Zeek, Suricata, CyberChef, tcpdump, or analyst judgment. It is meant to sit before and between those tools, reduce repetitive triage work, and keep findings, evidence, artifacts, and handoff filters in one consistent workflow.
 
@@ -160,7 +160,7 @@ PCAT currently extracts TShark fields for:
 - IPv4 and IPv6 source/destination.
 - TCP and UDP ports.
 - TCP flags, TCP payload length, and TCP stream ID.
-- DNS query, A answer, and response code.
+- DNS query, common answer fields, and response code where TShark exposes them.
 - HTTP host, method, URI, full URI, user agent, status, content type, and content length.
 - TLS SNI.
 - ICMP type.
@@ -303,7 +303,7 @@ Implemented PCAT still has boundaries:
 
 Planned work should remain separate from implemented behavior in documentation and reports.
 
-### V2.1 Integration Layer
+### Later Integration Layer
 
 Planned:
 

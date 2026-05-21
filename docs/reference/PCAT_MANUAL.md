@@ -30,7 +30,11 @@ PYTHONPATH=src python3 -m pcat --help
 
 ## Global Behavior
 
-PCAT accepts `.pcap` and `.pcapng` files.
+PCAT accepts capture files that TShark/Wireshark can parse. Common supported inputs include `.pcap`, `.pcapng`, `.cap`, `.pcap.gz`, and valid captures with unusual extensions.
+
+Archives are not unpacked automatically. Extract `.zip`, `.7z`, `.rar`, `.tar`, and similar files first, then run PCAT on the contained capture.
+
+If a file looks like HTML, PCAT reports it as a likely failed download or placeholder page. Download the raw capture and retry.
 
 Input can be passed with `-i`:
 
@@ -417,6 +421,7 @@ Things to test:
 - Save to a text file.
 - Compare with `--no-raw`.
 - Compare with `--no-payloads`.
+- Invalid regex should fail with exit code `2` and a concise parser message.
 
 ## `pcat search`
 
@@ -449,6 +454,7 @@ Things to test:
 - Literal keyword that does not exist.
 - Regex match.
 - Invalid regex behavior.
+- Invalid regex should fail with exit code `2`.
 
 ## `pcat files`
 
@@ -669,6 +675,7 @@ Use different PCAPs if available:
 | Large HTTP/multipart | `summary`, `http`, `hunt`, `analyze` | No CSV field-size crash |
 | Encoded text | `hunt`, `analyze` | Decoded-looking string |
 | Invalid file | any command | Friendly error, exit code 4 |
+| Invalid regex | `strings --grep`, `search --regex` | Friendly error, exit code 2 |
 | Missing `tshark` | `analyze` | Friendly error, exit code 3 |
 
 ## Suggested First Test Session
@@ -697,11 +704,12 @@ find sample.pcap-pcat/sample -maxdepth 2 -type f | sort
 ## Known V2 Limitations
 
 - PCAT requires `tshark`.
+- PCAT lets TShark decide capture parseability; if TShark cannot parse a file, PCAT reports guidance based on the detected input type.
 - ML scoring is skipped if `scikit-learn` is missing.
 - Artifact carving is best-effort and can produce false positives.
 - Raw-file artifact hits are noisier than packet-payload hits; check validation before trusting them.
 - Some protocol fields may not appear depending on the PCAP and `tshark` version.
-- Zeek and Suricata orchestration are planned for V2.1, not required for the V2 baseline.
+- Zeek and Suricata orchestration are planned for a later integration milestone, not required for the V2 baseline.
 - No redaction by default.
 - No live capture.
 - No GUI.

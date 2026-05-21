@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .errors import InputFileError
 from .models import PacketRecord
-from .utils import require_tshark
+from .utils import input_parse_guidance, require_tshark
 
 
 FIELDS = [
@@ -29,7 +29,14 @@ FIELDS = [
     "tcp.len",
     "tcp.stream",
     "dns.qry.name",
+    "dns.resp.name",
     "dns.a",
+    "dns.aaaa",
+    "dns.cname",
+    "dns.ptr.domain_name",
+    "dns.ns",
+    "dns.mx.mail_exchange",
+    "dns.txt",
     "dns.flags.rcode",
     "http.host",
     "http.request.method",
@@ -68,7 +75,7 @@ def run_tshark_fields(path: Path) -> str:
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
     if result.returncode != 0:
         message = result.stderr.strip() or "tshark failed to parse the input file."
-        raise InputFileError(message)
+        raise InputFileError(input_parse_guidance(path, message))
     return result.stdout
 
 
@@ -126,8 +133,19 @@ def parse_packets(path: Path) -> list[PacketRecord]:
                 tcp_flags=first(row.get("tcp.flags", "")),
                 tcp_len=first(row.get("tcp.len", "")),
                 tcp_stream=first(row.get("tcp.stream", "")),
-                dns_query=first(row.get("dns.qry.name", "")),
-                dns_answer=first(row.get("dns.a", "")),
+                dns_query=first_nonempty(row.get("dns.qry.name", ""), row.get("dns.resp.name", "")),
+                dns_answer=joined_unique_fields(
+                    row,
+                    [
+                        "dns.a",
+                        "dns.aaaa",
+                        "dns.cname",
+                        "dns.ptr.domain_name",
+                        "dns.ns",
+                        "dns.mx.mail_exchange",
+                        "dns.txt",
+                    ],
+                ),
                 dns_rcode=first(row.get("dns.flags.rcode", "")),
                 http_host=first(row.get("http.host", "")),
                 http_method=first(row.get("http.request.method", "")),
@@ -171,6 +189,21 @@ def first_nonempty(*values: str | None) -> str:
         if item:
             return item
     return ""
+
+
+def joined_unique_fields(row: dict[str, str], fields: list[str]) -> str:
+    values: list[str] = []
+    seen = set()
+    for field in fields:
+        raw = row.get(field, "")
+        if not raw:
+            continue
+        for item in raw.split(","):
+            item = item.strip()
+            if item and item not in seen:
+                seen.add(item)
+                values.append(item)
+    return ", ".join(values)
 
 
 def raise_csv_field_limit() -> None:

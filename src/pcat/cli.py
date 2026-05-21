@@ -100,7 +100,7 @@ Command help:
   pcat help analyze
 """,
     )
-    parser.add_argument("--version", action="version", version="PCAT 0.2.0")
+    parser.add_argument("--version", action="version", version="PCAT 0.2.1")
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", title="commands")
 
     add_analyze(sub)
@@ -122,8 +122,9 @@ Command help:
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("file", nargs="?", metavar="PCAP", help="Input .pcap or .pcapng file. Do not use this together with -i/--input.")
-    parser.add_argument("-i", "--input", dest="input_file", metavar="PCAP", help="Input .pcap or .pcapng file. Preferred explicit input style.")
+    input_help = "Input capture readable by tshark, such as .pcap, .pcapng, .cap, .pcap.gz, or a valid capture with an unusual extension."
+    parser.add_argument("file", nargs="?", metavar="PCAP", help=f"{input_help} Do not use this together with -i/--input.")
+    parser.add_argument("-i", "--input", dest="input_file", metavar="PCAP", help=f"{input_help} Preferred explicit input style.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show concise progress details")
     parser.add_argument("--quiet", action="store_true", help="Suppress normal terminal chatter")
     parser.add_argument("--json", action="store_true", help="Print command output as JSON")
@@ -829,7 +830,7 @@ def cmd_doctor(args) -> int:
         "purpose": "optional ML anomaly scoring",
     }
     result = {
-        "pcat_version": "0.2.0",
+        "pcat_version": "0.2.1",
         "python": sys.version.split()[0],
         "tools": tools,
         "python_packages": [optional_ml],

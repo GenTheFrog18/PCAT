@@ -1,6 +1,6 @@
 # PCAT - PCAP Assistant for Triage
 
-PCAT adalah tool command-line offline untuk analisis awal file `.pcap` dan `.pcapng`. Tool ini dibuat untuk triage jaringan dan workflow CTF, terutama saat pertanyaan awalnya adalah: isi capture ini apa, bagian mana yang penting, dan harus mulai cek dari mana?
+PCAT adalah tool command-line offline untuk analisis awal packet capture. PCAT menerima capture yang bisa dibaca TShark/Wireshark, termasuk `.pcap`, `.pcapng`, `.cap`, `.pcap.gz`, dan capture valid dengan ekstensi tidak umum. Tool ini dibuat untuk triage jaringan dan workflow CTF, terutama saat pertanyaan awalnya adalah: isi capture ini apa, bagian mana yang penting, dan harus mulai cek dari mana?
 
 ## Kebutuhan
 
@@ -48,6 +48,7 @@ Setiap command mendukung `--json` untuk automation dan handoff ke tim.
 ## Kemampuan V2
 
 - Summary capture dengan protocol, host, port, DNS, HTTP, dan stream.
+- Input mengikuti kemampuan TShark, dengan pesan yang lebih jelas untuk archive, placeholder HTML/download gagal, file gzip, dan capture invalid.
 - Metadata capture dengan SHA256, data `capinfos` jika tersedia, dan protocol hierarchy.
 - Structured evidence dengan stable ID, confidence, preview, anchor frame/stream, dan handoff filter.
 - Parser lebih aman untuk capture HTTP/multipart besar.
@@ -55,6 +56,7 @@ Setiap command mendukung `--json` untuk automation dan handoff ke tim.
 - Mode hunt untuk CTF: flag, credential, clue string, fragment base64 pendek, rekonstruksi berdasarkan timestamp, dan SYN packet yang membawa payload.
 - Triage transfer HTTP memakai metadata request/response, content type, content length, dan indikasi upload/download besar.
 - Bukti SMTP dan MQTT ditampilkan jika field tersedia dari TShark.
+- Ekstraksi DNS lebih luas untuk answer umum seperti A, AAAA, CNAME, PTR, NS, MX, dan TXT jika field tersedia dari TShark.
 - Deteksi artifact berbasis magic-byte dengan status validasi seperti `validated`, `signature_only`, dan `invalid`.
 - Artifact manager membuat `artifacts/manifest.json`; ekstraksi default fokus ke packet payload, raw carving harus opt-in.
 - Ekstraksi lebih aman: `--limit` membatasi file yang benar-benar ditulis, artifact invalid dilewati, dan raw carving dibatasi.

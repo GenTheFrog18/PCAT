@@ -1,6 +1,9 @@
 from pathlib import Path
 import base64
 
+import pytest
+
+from pcat.errors import InvalidArgumentError
 from pcat.stringtools import custom_flag_regex, decode_interesting, extract_strings_from_bytes, find_matches
 
 
@@ -14,6 +17,11 @@ def test_find_matches_literal_and_regex():
     rows = [("raw-file", "flag{demo}"), ("packet:1", "password=test")]
     assert find_matches(rows, "FLAG", ignore_case=True) == [("raw-file", "flag{demo}")]
     assert find_matches(rows, r"password=.*", regex=True) == [("packet:1", "password=test")]
+
+
+def test_find_matches_invalid_regex_raises_invalid_argument():
+    with pytest.raises(InvalidArgumentError, match="Invalid regex pattern"):
+        find_matches([("raw-file", "flag{demo}")], "[", regex=True)
 
 
 def test_decode_interesting_base64_and_hex():

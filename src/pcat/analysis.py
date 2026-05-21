@@ -334,6 +334,7 @@ def run_detectors(report: AnalysisReport, packets: list[PacketRecord], strings: 
     findings.extend(http_findings(report.http_records))
     findings.extend(smtp_findings(report.smtp_records, strings))
     findings.extend(mqtt_findings(report.mqtt_records))
+    findings.extend(dns_visibility_findings(packets, report.dns_records))
     findings.extend(dns_findings(report.dns_records))
     findings.extend(secret_findings(strings, options))
     findings.extend(clue_findings(strings))
@@ -599,6 +600,36 @@ def dns_findings(records: list[DnsRecord]) -> list[Finding]:
                 "",
             ))
     return findings
+
+
+def dns_visibility_findings(packets: list[PacketRecord], records: list[DnsRecord]) -> list[Finding]:
+    dns_like_packets = [
+        packet
+        for packet in packets
+        if packet.protocol in {"DNS", "MDNS", "LLMNR", "NBNS"} or has_dns_in_stack(packet.protocol_stack)
+    ]
+    if not dns_like_packets:
+        return []
+    if any(record.query or record.answer for record in records):
+        return []
+    protocols = Counter(packet.protocol or "DNS-like" for packet in dns_like_packets)
+    evidence = [
+        f"{len(dns_like_packets)} DNS-like packet(s) observed but no useful DNS query/answer fields were extracted.",
+        "protocols=" + ", ".join(f"{name}:{count}" for name, count in protocols.most_common()),
+    ]
+    return [make_finding(
+        "DNS traffic needs manual parser review",
+        "dns",
+        15,
+        evidence,
+        "The capture contains DNS-like packets, but PCAT could not extract useful query or answer fields. The traffic may be malformed, unsupported by the current tshark field set, or decoded under a related name service protocol.",
+        "Open the capture in Wireshark or run tshark -r <capture> -Y dns -V to inspect the DNS-like packets directly.",
+    )]
+
+
+def has_dns_in_stack(protocol_stack: str) -> bool:
+    tokens = {item.lower() for item in protocol_stack.split(":") if item}
+    return bool(tokens & {"dns", "mdns", "llmnr", "nbns"})
 
 
 def secret_findings(rows: list[tuple[str, str]], options: AnalyzeOptions) -> list[Finding]:

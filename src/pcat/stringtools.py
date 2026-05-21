@@ -5,6 +5,8 @@ import binascii
 import re
 from pathlib import Path
 
+from .errors import InvalidArgumentError
+
 
 STRING_RE_TEMPLATE = rb"[\x09\x0a\x0d\x20-\x7e]{%d,}"
 BASE64_TOKEN = re.compile(r"[A-Za-z0-9+/=]{8,}")
@@ -84,7 +86,10 @@ def find_matches(
     ignore_case: bool = False,
 ) -> list[tuple[str, str]]:
     flags = re.IGNORECASE if ignore_case else 0
-    compiled = re.compile(pattern if regex else re.escape(pattern), flags)
+    try:
+        compiled = re.compile(pattern if regex else re.escape(pattern), flags)
+    except re.error as exc:
+        raise InvalidArgumentError(f"Invalid regex pattern: {exc}") from exc
     return [(source, text) for source, text in rows if compiled.search(text)]
 
 
