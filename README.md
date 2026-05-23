@@ -34,6 +34,7 @@ pcat evidence -i capture.pcap --top 25
 pcat timeline -i capture.pcap --top 50
 pcat hunt -i capture.pcap --limit 50
 pcat strings -i capture.pcap --grep flag --ignore-case
+pcat strings -i capture.pcap --source packet --grep flag
 pcat search -i capture.pcap password --ignore-case
 pcat files -i capture.pcap --top 50
 pcat artifacts -i capture.pcap --top 50
@@ -58,16 +59,18 @@ Every command supports `--json` for automation and teammate handoff.
 - HTTP transfer triage using request/response metadata, content type, content length, and large upload/download hints.
 - SMTP and MQTT evidence surfacing when TShark exposes those fields.
 - Broader DNS extraction for common answer types such as A, AAAA, CNAME, PTR, NS, MX, and TXT where TShark exposes them.
-- Magic-byte artifact detection with certainty labels: `confirmed`, `candidate`, or `rejected`.
-- Artifact manager output with `artifacts/manifest.json`; default extraction focuses on packet payload artifacts and raw carving is opt-in.
-- Safer extraction: `--limit` limits actual writes, invalid artifacts are skipped, and raw carving is bounded.
+- Timeline events use linked evidence timestamps when available and show `unknown` instead of inventing time zero.
+- Magic-byte artifact detection with certainty labels: `confirmed`, `candidate`, or `rejected`, plus trust fields for magic-header, structure, completeness, truncation, source scope, and skip reason.
+- Artifact manager output with `artifacts/manifest.json`; rejected artifacts are grouped in default stdout, with individual offsets preserved in JSON or verbose output.
+- Safer extraction: `--limit` limits actual writes, invalid or incomplete artifacts are skipped, raw carving is opt-in, skipped reasons are counted, and HTTP object export is reported separately from artifact carving.
+- `strings` and `search` share source behavior and support `--source raw`, `--source packet`, or `--source all`.
 - JSON reports use `report.json`, `stories.json`, and `evidence.json`; CSV exports include flows, hosts, DNS, HTTP, artifacts, and findings.
 - Copy-paste-safe generated commands for paths containing spaces.
 
 ## Current Limits
 
-- Artifact certainty is a triage label, not a guarantee that a carved object is complete or decodable.
-- Timeline, stream reassembly, TFTP export, MQTT payload export, USB HID decoding, and deeper CTF decoders are planned improvements.
+- `candidate` artifacts are leads, not confirmed files. Check `complete_file_valid`, `truncated`, and `source_scope` before trusting a carved object.
+- Stream reassembly, TFTP export, MQTT payload export, USB HID decoding, and deeper CTF decoders are planned improvements.
 - PCAT should be used as a briefing and handoff tool beside Wireshark/TShark and other specialist tools.
 
 ## Documentation

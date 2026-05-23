@@ -1,4 +1,5 @@
 from pcat.cli import main, parse_formats
+from pcat.models import PacketRecord
 
 
 def test_parse_formats_aliases():
@@ -38,6 +39,33 @@ def test_strings_command_no_payloads(tmp_path, capsys):
     assert main(["strings", "-i", str(sample), "--no-payloads", "--grep", "flag", "--ignore-case"]) == 0
     output = capsys.readouterr().out
     assert "flag{demo}" in output
+
+
+def test_strings_source_raw_does_not_parse_packets(tmp_path, capsys, monkeypatch):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"rawflag packetflag")
+
+    def fail_parse(_path):
+        raise AssertionError("packet parser should not run for --source raw")
+
+    monkeypatch.setattr("pcat.cli.parse_packets", fail_parse)
+    assert main(["strings", "-i", str(sample), "--source", "raw", "--grep", "rawflag"]) == 0
+    output = capsys.readouterr().out
+    assert "rawflag" in output
+
+
+def test_search_source_packet_uses_payload_source(tmp_path, capsys, monkeypatch):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"rawflag")
+
+    def fake_parse(_path):
+        return [PacketRecord(frame_number=7, timestamp=1.0, length=20, payload_hex=b"packetflag".hex())]
+
+    monkeypatch.setattr("pcat.cli.parse_packets", fake_parse)
+    assert main(["search", "-i", str(sample), "packetflag", "--source", "packet"]) == 0
+    output = capsys.readouterr().out
+    assert "[packet:7] packetflag" in output
+    assert "rawflag" not in output
 
 
 def test_strings_invalid_regex_returns_invalid_argument(tmp_path, capsys):
@@ -85,3 +113,35 @@ def test_extract_reports_rejected_artifact_when_nothing_extracts(tmp_path, capsy
     assert "Artifacts extracted: 0" in output
     assert "rejected=1" in output
     assert "No artifacts were extracted" in output
+
+
+def test_extract_reports_raw_disabled_skip(tmp_path, capsys):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"%PDF-1.7\nbody\n%%EOF")
+    out = tmp_path / "case"
+    code = main(["extract", "-i", str(sample), "--no-payloads", "-o", str(out)])
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "Raw-capture artifacts skipped: 1" in output
+    assert "--include-raw" in output
+
+
+def test_extract_reports_http_export_separately(tmp_path, capsys, monkeypatch):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"plain capture placeholder")
+    out = tmp_path / "case"
+
+    def fake_export(_path, output_dir):
+        return {
+            "output_dir": str(output_dir / "http_objects"),
+            "exported_count": 2,
+            "status": "ok",
+            "error": "",
+        }
+
+    monkeypatch.setattr("pcat.cli.run_tshark_export_http", fake_export)
+    code = main(["extract", "-i", str(sample), "--no-payloads", "--http", "-o", str(out)])
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "HTTP objects exported: 2" in output
+    assert "Artifacts extracted: 0" in output

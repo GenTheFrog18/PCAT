@@ -9,13 +9,13 @@ For architectural goals and design philosophy, see `PCAT_ARCHITECTURE.md`.
 Current PCAT version:
 
 ```text
-0.2.2
+0.2.3
 ```
 
 Current report schema version:
 
 ```text
-0.2.2
+0.2.3
 ```
 
 Required runtime:
@@ -370,6 +370,13 @@ Tracks detected and extracted file-like objects:
 - path
 - certainty
 - validation
+- magic header validity
+- structure validity
+- complete-file validity
+- truncation status
+- source scope
+- skip reason
+- duplicate pointer
 - encrypted flag
 - member list
 - manifest path
@@ -380,9 +387,22 @@ Tracks detected and extracted file-like objects:
 
 Artifact certainty values:
 
-- `confirmed`: structure validation succeeded.
-- `candidate`: signature was observed, but PCAT cannot fully validate the structure.
+- `confirmed`: structure and complete-file validation succeeded.
+- `candidate`: signature was observed, but PCAT cannot fully validate structure or completeness, or the type only supports signature-level validation.
 - `rejected`: magic bytes matched, but structure validation failed; extraction is skipped.
+
+Artifact validation values:
+
+- `validated`: PCAT could validate both structure and completeness for the supported type.
+- `signature_only`: PCAT found a known magic header, but the validator cannot prove a complete file.
+- `truncated`: PCAT found a plausible header/structure but the available bytes are incomplete.
+- `invalid`: the magic-byte hit failed structure validation.
+
+Artifact source scopes:
+
+- `packet_payload`: found in a parsed packet payload.
+- `raw_capture`: found in raw capture bytes.
+- `http_object`, `stream_reassembled`, and `tftp_object` are reserved for later object/reassembly features.
 
 ### `EvidenceRecord`
 
@@ -730,6 +750,8 @@ pcat timeline -i capture.pcap --json
 Behavior:
 
 - Uses finding timeline when findings exist.
+- Timeline events use linked evidence timestamps when available.
+- Events without a known timestamp render as `unknown` and use `null` in JSON.
 - Falls back to timestamped evidence when finding timeline is empty.
 
 ### `pcat strings`
@@ -739,6 +761,7 @@ Extracts printable strings.
 ```bash
 pcat strings -i capture.pcap
 pcat strings -i capture.pcap --grep flag --ignore-case
+pcat strings -i capture.pcap --source packet --grep flag
 pcat strings -i capture.pcap --output strings.txt
 pcat strings -i capture.pcap --json
 ```
@@ -750,6 +773,7 @@ Options:
 - `--ignore-case`: case-insensitive filter.
 - `--output FILE`: write extracted strings to a file.
 - `--limit N`, `--top N`: maximum printed rows.
+- `--source all|raw|packet`: choose the string source. `all` uses enabled raw and packet-payload sources.
 - `--no-raw`: skip raw PCAP byte scanning.
 - `--no-payloads`: skip packet payload scanning.
 
@@ -763,6 +787,7 @@ Searches extracted strings.
 pcat search -i capture.pcap password
 pcat search -i capture.pcap "flag\\{.*\\}" --regex
 pcat search capture.pcap token --ignore-case --limit 50
+pcat search -i capture.pcap flag --source packet
 pcat search -i capture.pcap password --json
 ```
 
@@ -773,6 +798,7 @@ Options:
 - `--ignore-case`: case-insensitive search.
 - `--min N`: minimum string length before search.
 - `--limit N`, `--top N`: maximum printed rows.
+- `--source all|raw|packet`: choose the same source index used by `strings`.
 - `--no-raw`: skip raw PCAP byte scanning.
 - `--no-payloads`: skip packet payload scanning.
 
@@ -798,12 +824,15 @@ Shows:
 
 - File type.
 - Source.
+- Source scope.
 - Offset.
 - Score.
 - Certainty.
 - Validation.
+- Completeness and truncation state.
 - Tags.
 - Reasons.
+- Rejected hits grouped by type/reason in default stdout. Use `--verbose` or `--json` for individual rejected offsets.
 
 ### `pcat artifacts`
 
@@ -822,6 +851,7 @@ Options:
 - `--limit N`, `--top N`: maximum rows.
 
 Default behavior focuses on packet payload artifacts.
+Default stdout groups rejected artifacts by type/reason; JSON keeps individual records and all trust fields.
 
 ### `pcat extract`
 
@@ -830,6 +860,7 @@ Extracts/carves detected artifacts.
 ```bash
 pcat extract -i capture.pcap
 pcat extract -i capture.pcap --include-raw
+pcat extract -i capture.pcap --http
 pcat extract -i capture.pcap -o extracted-case --force --limit 10
 pcat extract -i capture.pcap --json
 ```
@@ -848,6 +879,13 @@ Writes:
 
 - Extracted files under `<out>/artifacts/`.
 - `<out>/artifacts/manifest.json`.
+- HTTP-exported objects under `<out>/http_objects/` when `--http` is used and TShark exports objects.
+
+Reports:
+
+- Found, selected, extracted, rejected, validation-failed, incomplete, missing-source, and raw-disabled counts.
+- HTTP object export count and status separately from artifact carving.
+- A `--include-raw` recommendation when useful artifacts were skipped because raw carving is disabled.
 
 ### `pcat suspicious`
 
@@ -1025,6 +1063,7 @@ Columns:
 - `artifact_id`
 - `kind`
 - `source`
+- `source_scope`
 - `offset`
 - `filename`
 - `path`
@@ -1032,6 +1071,12 @@ Columns:
 - `sha256`
 - `certainty`
 - `validation`
+- `magic_header_valid`
+- `structure_valid`
+- `complete_file_valid`
+- `truncated`
+- `extraction_status`
+- `skip_reason`
 - `score`
 - `tags`
 
@@ -1091,11 +1136,10 @@ Extracted artifacts may be malicious. Treat extracted files as untrusted.
 - No GUI.
 - No first-class full stream reassembly workflow.
 - Simple HTML report only.
-- Basic timeline output.
-- Timeline/event timestamps should be verified on challenging captures until V2.3 timestamp hardening is implemented.
+- Timeline depends on linked evidence; some events may legitimately have unknown time.
 - Protocol extraction depends on TShark exposing fields.
 - Raw file artifact hits are noisy.
-- Artifact certainty does not yet prove that a carved object is complete, decodable, or the full transferred file.
+- Artifact `candidate` records are leads; inspect completeness/truncation/source-scope fields before trusting them.
 - Packet-local artifacts can be fragments of larger HTTP, TFTP, MQTT, or stream data.
 - Redaction flags exist, but redaction behavior is not implemented yet.
 - Zeek and Suricata are only checked by `doctor`, not orchestrated.
@@ -1103,19 +1147,6 @@ Extracted artifacts may be malicious. Treat extracted files as untrusted.
 ## Planned Features Not Yet Implemented
 
 These are planned or proposed. They should not be described as implemented behavior.
-
-### V2.3 Trust And Output Hardening
-
-- Fix timeline timestamp handling and unknown-time display.
-- Add artifact completeness/truncation/source-scope metadata.
-- Separate magic-header, structure, and complete-file validation.
-- Track skipped extraction reasons.
-- Report HTTP object export separately from artifact carving.
-- Recommend `--include-raw` when raw carving is required.
-- Group rejected artifacts by type and reason in default stdout.
-- Keep detailed rejected offsets in JSON or verbose output.
-- Reduce speculative decoded-string noise.
-- Make `search` and `strings --grep` use consistent source behavior or source filters.
 
 ### V2.4 Protocol Views And Reassembly
 

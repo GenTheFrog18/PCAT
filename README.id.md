@@ -34,6 +34,7 @@ pcat evidence -i capture.pcap --top 25
 pcat timeline -i capture.pcap --top 50
 pcat hunt -i capture.pcap --limit 50
 pcat strings -i capture.pcap --grep flag --ignore-case
+pcat strings -i capture.pcap --source packet --grep flag
 pcat search -i capture.pcap password --ignore-case
 pcat files -i capture.pcap --top 50
 pcat artifacts -i capture.pcap --top 50
@@ -58,16 +59,18 @@ Setiap command mendukung `--json` untuk automation dan handoff ke tim.
 - Triage transfer HTTP memakai metadata request/response, content type, content length, dan indikasi upload/download besar.
 - Bukti SMTP dan MQTT ditampilkan jika field tersedia dari TShark.
 - Ekstraksi DNS lebih luas untuk answer umum seperti A, AAAA, CNAME, PTR, NS, MX, dan TXT jika field tersedia dari TShark.
-- Deteksi artifact berbasis magic-byte dengan label certainty: `confirmed`, `candidate`, atau `rejected`.
-- Artifact manager membuat `artifacts/manifest.json`; ekstraksi default fokus ke packet payload, raw carving harus opt-in.
-- Ekstraksi lebih aman: `--limit` membatasi file yang benar-benar ditulis, artifact invalid dilewati, dan raw carving dibatasi.
+- Timeline memakai timestamp evidence jika tersedia dan menampilkan `unknown` daripada membuat waktu palsu `0.000000`.
+- Deteksi artifact berbasis magic-byte dengan label certainty: `confirmed`, `candidate`, atau `rejected`, plus field trust untuk magic header, struktur, kelengkapan file, truncation, source scope, dan alasan skip.
+- Artifact manager membuat `artifacts/manifest.json`; rejected artifact digabung per tipe/alasan di stdout default, sementara offset detail tetap ada di JSON atau verbose output.
+- Ekstraksi lebih aman: `--limit` membatasi file yang benar-benar ditulis, artifact invalid/incomplete dilewati, raw carving harus opt-in, alasan skip dihitung, dan export HTTP object dilaporkan terpisah dari artifact carving.
+- `strings` dan `search` memakai source behavior yang sama dan mendukung `--source raw`, `--source packet`, atau `--source all`.
 - Report JSON memakai `report.json`, `stories.json`, dan `evidence.json`; export CSV mencakup flows, hosts, DNS, HTTP, artifacts, dan findings.
 - Command rekomendasi sudah aman untuk path yang mengandung spasi.
 
 ## Batasan Saat Ini
 
-- Certainty artifact adalah label triage, bukan jaminan bahwa hasil carving lengkap atau bisa dibuka.
-- Timeline, stream reassembly, export TFTP, export payload MQTT, decoding USB HID, dan decoder CTF yang lebih dalam masih rencana.
+- Artifact `candidate` adalah lead, bukan file yang sudah pasti valid. Periksa `complete_file_valid`, `truncated`, dan `source_scope` sebelum mempercayai hasil carving.
+- Stream reassembly, export TFTP, export payload MQTT, decoding USB HID, dan decoder CTF yang lebih dalam masih rencana.
 - PCAT sebaiknya dipakai sebagai tool briefing dan handoff bersama Wireshark/TShark dan tool spesialis lain.
 
 ## Dokumentasi

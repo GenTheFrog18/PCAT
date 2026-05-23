@@ -2,7 +2,7 @@
 
 Date: 2026-05-22
 
-This document captures CTF-oriented feedback from the PCAT `0.2.2` test cycle. It is intentionally separate from the immediate V2.3 roadmap. V2.3 should fix trust, timeline, artifact, extraction, search, and output-noise issues first. The CTF work below should happen later, after PCAT's general triage output is reliable.
+This document captures CTF-oriented feedback from the PCAT `0.2.2` test cycle. It is intentionally separate from the V2.3 trust-hardening work, which now covers timeline, artifact, extraction, search, and output-noise issues in `0.2.3`. The CTF work below should happen later, after PCAT's general triage output is reliable.
 
 ## Product Position
 

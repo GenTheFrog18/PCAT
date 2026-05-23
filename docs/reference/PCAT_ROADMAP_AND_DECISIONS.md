@@ -32,7 +32,7 @@ Critical interpretation:
 - PCAT is useful as a 30-60 second scout, not as a replacement for Wireshark, TShark, NetworkMiner, Zeek, binwalk, CyberChef, or protocol scripts.
 - The most urgent failures are not "more CTF tricks." They are trust failures: broken timelines, overconfident artifacts, wrong extraction recommendations, noisy stdout, and hidden useful records.
 - CTF feedback is still valuable for general triage because CTF captures stress the same workflows: ranking, decoding hints, protocol views, object extraction, and honest handoff.
-- V2.3 should therefore become a trust/output hardening release. Deeper CTF decoding remains documented but deferred.
+- V2.3 therefore became a trust/output hardening release. Deeper CTF decoding remains documented but deferred.
 
 ## Product Thesis
 
@@ -236,7 +236,7 @@ Caching is planned for a later V2.x milestone, not the first stabilization patch
 
 Decision:
 
-V2.3 should prioritize timeline correctness, artifact completeness semantics, extraction accounting, stdout grouping, search consistency, and noise reduction.
+V2.3 prioritizes timeline correctness, artifact completeness semantics, extraction accounting, stdout grouping, search consistency, and noise reduction.
 
 Reason:
 
@@ -262,7 +262,7 @@ Impact:
 
 - V2.4 is renamed from generic protocol views to protocol views and reassembly.
 - TFTP and MQTT are promoted into the V2.4 plan.
-- V2.3 should prepare the metadata fields and output language that V2.4 protocol exporters will reuse.
+- V2.3 prepares the metadata fields and output language that V2.4 protocol exporters will reuse.
 
 ## Roadmap Overview
 
@@ -487,6 +487,10 @@ Goal:
 
 Make PCAT's output trustworthy enough that users can follow its first-pass guidance without being misled.
 
+Status:
+
+Implemented in schema/tool version `0.2.3`.
+
 Primary work:
 
 - Fix timeline timestamps:
@@ -510,8 +514,9 @@ Primary work:
   - Group overlapping candidates and mark canonical/sibling records.
   - Prevent repeated high/critical findings from one duplicate object.
 - Make search behavior consistent:
-  - Make `search` and `strings --grep` use the same indexed string source, or document and expose source differences clearly.
-  - Consider source filters: `raw`, `packet`, `http`, `dns`, `mqtt`, `reassembled`.
+  - `search` and `strings --grep` use the same source loading behavior.
+  - Implemented source filters: `raw`, `packet`, and `all`.
+  - Protocol-specific source filters such as `http`, `dns`, `mqtt`, and `reassembled` remain V2.4+ work.
 - Reduce speculative decode and infrastructure noise:
   - Penalize common infrastructure strings such as OCSP URLs, SSDP/UPnP NOTIFY, telemetry hosts, UUIDs, and ordinary mDNS.
   - Require decoded-looking strings to pass stronger readability checks.
@@ -534,6 +539,14 @@ Exit criteria:
 - `search` and `strings --grep` produce consistent results for the same source settings.
 - Speculative decoded junk is reduced in default `hunt` output.
 - Report JSON/manifest contains enough fields to explain artifact certainty, completeness, source scope, and skipped reasons.
+
+Implementation notes:
+
+- Timeline events now use linked evidence timestamps where possible and render unknown timestamps explicitly.
+- Artifact records now include `magic_header_valid`, `structure_valid`, `complete_file_valid`, `truncated`, `source_scope`, `skip_reason`, and `duplicate_of`.
+- Extraction output now reports raw-disabled skips, validation failures, incomplete artifacts, missing source data, and HTTP object export status separately.
+- Default artifact stdout groups rejected records by type/reason; JSON and verbose output keep individual records.
+- Default decoding/clue output filters common infrastructure noise more aggressively.
 
 ### V2.4: Protocol-Specific Views And Reassembly
 

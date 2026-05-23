@@ -13,6 +13,17 @@ BASE64_TOKEN = re.compile(r"[A-Za-z0-9+/=]{8,}")
 HEX_LIKE = re.compile(r"\b(?:[0-9a-fA-F]{2}){8,}\b")
 BASE85_TOKEN = re.compile(r"[!-~]{12,}")
 
+INFRASTRUCTURE_NOISE = (
+    "ocsp",
+    "ssdp",
+    "upnp",
+    "uuid:",
+    "urn:schemas-upnp-org",
+    "notify * http",
+    "_services._dns-sd",
+    "m-search * http",
+)
+
 
 FLAG_PATTERNS = [
     r"flag\{[^}\r\n]{1,200}\}",
@@ -190,14 +201,28 @@ def is_useful_decoded_text(text: str) -> bool:
     stripped = text.strip()
     if len(stripped) < 3:
         return False
+    if is_infrastructure_noise(stripped):
+        return False
     printable = sum((ch.isprintable() or ch in "\r\n\t") for ch in stripped)
     if printable < max(3, int(len(stripped) * 0.85)):
         return False
     letters = sum(ch.isalpha() for ch in stripped)
+    alnum = sum(ch.isalnum() for ch in stripped)
     clue_chars = sum(ch in "{}_:-/=.@ " for ch in stripped)
     if letters + clue_chars < max(3, int(len(stripped) * 0.35)):
         return False
+    if alnum < max(3, int(len(stripped) * 0.25)):
+        return False
     return True
+
+
+def is_infrastructure_noise(text: str) -> bool:
+    lowered = text.lower()
+    if any(token in lowered for token in INFRASTRUCTURE_NOISE):
+        return True
+    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", lowered):
+        return True
+    return False
 
 
 def decode_base85_near_hint(text: str) -> list[str]:

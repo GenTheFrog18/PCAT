@@ -268,12 +268,33 @@ def write_http_csv(report: AnalysisReport, path: Path) -> None:
 def write_artifacts_csv(report: AnalysisReport, path: Path) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["artifact_id", "kind", "source", "offset", "filename", "path", "size", "sha256", "certainty", "validation", "score", "tags"])
+        writer.writerow([
+            "artifact_id",
+            "kind",
+            "source",
+            "source_scope",
+            "offset",
+            "filename",
+            "path",
+            "size",
+            "sha256",
+            "certainty",
+            "validation",
+            "magic_header_valid",
+            "structure_valid",
+            "complete_file_valid",
+            "truncated",
+            "extraction_status",
+            "skip_reason",
+            "score",
+            "tags",
+        ])
         for artifact in report.artifacts:
             writer.writerow([
                 artifact.artifact_id,
                 artifact.kind,
                 artifact.source,
+                artifact.source_scope,
                 artifact.offset,
                 artifact.filename,
                 artifact.path,
@@ -281,6 +302,12 @@ def write_artifacts_csv(report: AnalysisReport, path: Path) -> None:
                 artifact.sha256,
                 artifact.certainty,
                 artifact.validation,
+                artifact.magic_header_valid,
+                artifact.structure_valid,
+                artifact.complete_file_valid,
+                artifact.truncated,
+                artifact.extraction_status,
+                artifact.skip_reason,
                 artifact.score,
                 ";".join(artifact.tags),
             ])

@@ -373,7 +373,7 @@ Useful options:
 
 ## `pcat timeline`
 
-Shows chronological events from findings. If no findings timeline exists, PCAT falls back to timestamped evidence records.
+Shows chronological events from findings. PCAT uses linked evidence timestamps when available and prints `unknown` when an event has no trustworthy timestamp. If no findings timeline exists, PCAT falls back to timestamped evidence records.
 
 ```bash
 pcat timeline -i capture.pcap
@@ -399,6 +399,7 @@ Search while extracting:
 
 ```bash
 pcat strings -i capture.pcap --grep flag --ignore-case
+pcat strings -i capture.pcap --source packet --grep flag
 ```
 
 Write strings to a file:
@@ -414,6 +415,7 @@ Useful options:
 - `--ignore-case`: case-insensitive match.
 - `--output PATH`: write output to file.
 - `--limit N`: display limit, default `200`.
+- `--source all|raw|packet`: choose the string source.
 - `--no-raw`: skip raw PCAP byte scanning.
 - `--no-payloads`: skip packet payload scanning.
 
@@ -448,6 +450,7 @@ Useful options:
 - `--ignore-case`: case-insensitive match.
 - `--min N`: minimum string length.
 - `--limit N`: display limit.
+- `--source all|raw|packet`: choose the same source behavior used by `strings`.
 - `--no-raw`: skip raw PCAP byte scanning.
 - `--no-payloads`: skip packet payload scanning.
 
@@ -547,16 +550,20 @@ Expected output folder:
 ```text
 <out>/artifacts/
 <out>/artifacts/manifest.json
+<out>/http_objects/        # only when --http exports objects
 ```
 
 Expected metadata:
 
 - Number of artifacts found, selected, and extracted.
 - Selected certainty counts for confirmed, candidate, and rejected hits.
+- Counts for skipped raw-disabled, validation-failed, incomplete, and missing-source artifacts.
+- HTTP object export count/status when `--http` is used.
 - Extracted path.
 - SHA256 hash.
 - Certainty label.
 - Validation state.
+- Completeness, truncation, source scope, and skip reason in JSON/manifest records.
 - Manifest entry.
 
 Things to test:
@@ -713,9 +720,9 @@ find sample.pcap-pcat/sample -maxdepth 2 -type f | sort
 - PCAT lets TShark decide capture parseability; if TShark cannot parse a file, PCAT reports guidance based on the detected input type.
 - ML scoring is skipped if `scikit-learn` is missing.
 - Artifact carving is best-effort and can produce false positives.
-- Artifact certainty does not yet prove that the carved object is complete or decodable.
+- Artifact `candidate` records are leads; check completeness/truncation/source-scope fields before trusting them.
 - Raw-file artifact hits are noisier than packet-payload hits; check validation before trusting them.
-- Timeline output and event ordering should be verified manually on challenging captures.
+- Timeline events without linked timestamps are explicitly shown as unknown.
 - Full stream reassembly, TFTP export, MQTT payload export, USB HID decoding, and deeper CTF decoder hints are planned improvements.
 - Some protocol fields may not appear depending on the PCAP and `tshark` version.
 - Zeek and Suricata orchestration are planned for a later integration milestone, not required for the V2 baseline.

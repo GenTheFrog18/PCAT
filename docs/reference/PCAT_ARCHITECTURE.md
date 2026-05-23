@@ -129,7 +129,7 @@ The full `analyze` pipeline works like this:
 
 ## Primary Data Model
 
-The schema version is currently `0.2.2`.
+The schema version is currently `0.2.3`.
 
 Implemented model groups:
 
@@ -295,12 +295,11 @@ Implemented PCAT still has boundaries:
 - It does not perform live capture.
 - It does not provide a GUI.
 - It does not reassemble full streams as a first-class workflow.
-- Timeline events are basic.
-- Timeline/event ordering may need verification against packet timestamps on challenging captures.
+- Timeline events depend on linked evidence; events without a known evidence timestamp are marked unknown.
 - HTML output is readable but simple.
 - Zeek and Suricata are detected but not orchestrated yet.
 - Raw artifact hits can be noisy.
-- Artifact certainty is a triage label, not a guarantee that a carved object is complete or decodable.
+- Artifact candidates are triage leads; users should inspect completeness, truncation, and source-scope fields before trusting them.
 - Packet-local artifacts may be fragments of a larger stream or transfer.
 - Some protocol fields depend on what TShark exposes for that capture.
 - The tool can miss data hidden in protocols or encodings it does not parse yet.
@@ -308,20 +307,6 @@ Implemented PCAT still has boundaries:
 ## Planned Features
 
 Planned work should remain separate from implemented behavior in documentation and reports.
-
-### V2.3 Trust And Output Hardening
-
-Planned:
-
-- Fix timeline timestamp handling so unknown times are not presented as `0.000000`.
-- Separate artifact header validity, structure validity, completeness, truncation, and source scope.
-- Track skipped extraction reasons, including raw carving disabled, validation failed, missing source data, and HTTP object export separately.
-- Recommend `--include-raw` when a promoted artifact requires raw carving.
-- Group rejected artifacts by type/reason in default stdout.
-- Keep individual rejected offsets in JSON or verbose output.
-- Reduce speculative decoded-string and normal-infrastructure noise.
-- Make `search` and `strings --grep` source behavior consistent or explicitly source-filtered.
-- Keep default terminal output concise and analyst-facing.
 
 ### V2.4 Protocol Views And Reassembly
 

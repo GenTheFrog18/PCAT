@@ -31,6 +31,7 @@ from .stringtools import (
     dedupe_strings,
     detect_credentials,
     detect_flags,
+    is_infrastructure_noise,
     raw_file_strings,
     strings_from_payload_hex,
 )
@@ -114,8 +115,8 @@ def analyze(path: Path, options: AnalyzeOptions | None = None) -> AnalysisReport
     score_streams(report.streams, report.findings)
     report.investigation_queue = build_queue(report.findings, report.streams, report.artifacts)
     report.handoff = collect_handoff(report.findings)
-    report.timeline = build_timeline(report.findings)
     build_report_evidence(report, packets, strings)
+    report.timeline = build_timeline(report)
     report.stories = build_stories(report, packets)
     report.briefing = build_briefing(report, packets)
     if not report.findings:
@@ -703,6 +704,8 @@ def clue_rows(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
     for source, text in rows:
         compact = " ".join(text.split())
         lowered = compact.lower()
+        if is_infrastructure_noise(compact) and not any(term in lowered for term in ["flag", "password", "passwd", "token", "secret"]):
+            continue
         if any(word in lowered for word in CLUE_WORDS):
             key = (source, compact[:250])
             if key not in seen:
@@ -795,7 +798,10 @@ def artifact_findings(artifacts: list[ArtifactRecord]) -> list[Finding]:
             title,
             "artifact",
             artifact.score,
-            [f"{artifact.kind} at offset {artifact.offset} in {artifact.source} ({artifact.certainty}/{artifact.validation}).", "; ".join(artifact.reasons + artifact.tags)],
+            [
+                f"{artifact.kind} at offset {artifact.offset} in {artifact.source} ({artifact.source_scope or artifact.source_type}; {artifact.certainty}/{artifact.validation}).",
+                "; ".join(artifact.reasons + artifact.tags),
+            ],
             explanation,
             "Run extract or inspect the artifact entry.",
             related=artifact.artifact_id,
@@ -1001,8 +1007,35 @@ def collect_handoff(findings: list[Finding]) -> list[HandoffHint]:
     return hints
 
 
-def build_timeline(findings: list[Finding]) -> list[TimelineEvent]:
-    return [TimelineEvent(0.0, f.title, "; ".join(f.evidence[:1]), f.severity) for f in sorted(findings, key=lambda f: f.risk_score, reverse=True)[:20]]
+def build_timeline(report: AnalysisReport) -> list[TimelineEvent]:
+    evidence_by_id = {item.evidence_id: item for item in report.evidence}
+    events: list[TimelineEvent] = []
+    for finding in sorted(report.findings, key=lambda f: f.risk_score, reverse=True)[:20]:
+        linked = [evidence_by_id[eid] for eid in finding.evidence_ids if eid in evidence_by_id]
+        timestamp = first_known_timestamp(linked)
+        detail = first_timeline_detail(linked) or "; ".join(finding.evidence[:1])
+        events.append(TimelineEvent(timestamp, finding.title, detail, finding.severity))
+    return sorted(events, key=timeline_sort_key)
+
+
+def first_known_timestamp(evidence) -> float | None:
+    timestamps = [item.timestamp for item in evidence if item.timestamp is not None]
+    if not timestamps:
+        return None
+    return min(timestamps)
+
+
+def first_timeline_detail(evidence) -> str:
+    for item in evidence:
+        if item.preview:
+            return item.preview
+    return ""
+
+
+def timeline_sort_key(event: TimelineEvent) -> tuple[int, float, str]:
+    if event.timestamp is None:
+        return (1, math.inf, event.title)
+    return (0, event.timestamp, event.title)
 
 
 def add_capture_notes(report: AnalysisReport, packets: list[PacketRecord]) -> None:

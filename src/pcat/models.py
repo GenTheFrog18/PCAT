@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any
 
 
-SCHEMA_VERSION = "0.2.2"
+SCHEMA_VERSION = "0.2.3"
 
 
 @dataclass
@@ -233,6 +233,13 @@ class ArtifactRecord:
     members: list[str] = field(default_factory=list)
     manifest_path: str = ""
     extraction_status: str = ""
+    magic_header_valid: bool = False
+    structure_valid: bool | None = None
+    complete_file_valid: bool | None = None
+    truncated: bool | None = None
+    source_scope: str = ""
+    skip_reason: str = ""
+    duplicate_of: str = ""
     tags: list[str] = field(default_factory=list)
     score: int = 0
     reasons: list[str] = field(default_factory=list)
@@ -280,7 +287,7 @@ class InvestigationItem:
 
 @dataclass
 class TimelineEvent:
-    timestamp: float
+    timestamp: float | None
     title: str
     detail: str = ""
     severity: str = "info"

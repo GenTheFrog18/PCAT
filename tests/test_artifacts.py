@@ -1,4 +1,5 @@
 import json
+import gzip
 
 from pcat.artifacts import detect_artifacts, extract_artifacts, write_artifact_manifest
 
@@ -41,6 +42,20 @@ def test_invalid_artifact_is_not_extracted(tmp_path):
     saved = extract_artifacts(sample, artifacts, tmp_path / "artifacts")
     assert saved == []
     assert artifacts[0].extraction_status == "skipped_invalid"
+
+
+def test_truncated_gzip_is_candidate_not_extracted(tmp_path):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"noise" + gzip.compress(b"flag{inside}")[:-8])
+    artifacts = detect_artifacts(sample, include_raw=True)
+    assert artifacts[0].kind == "gzip"
+    assert artifacts[0].validation == "truncated"
+    assert artifacts[0].certainty == "candidate"
+    assert artifacts[0].complete_file_valid is False
+    assert artifacts[0].truncated is True
+    saved = extract_artifacts(sample, artifacts, tmp_path / "artifacts")
+    assert saved == []
+    assert artifacts[0].extraction_status == "skipped_incomplete"
 
 
 def test_signature_only_artifact_is_candidate(tmp_path):

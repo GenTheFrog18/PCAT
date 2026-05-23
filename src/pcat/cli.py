@@ -101,7 +101,7 @@ Command help:
   pcat help analyze
 """,
     )
-    parser.add_argument("--version", action="version", version="PCAT 0.2.2")
+    parser.add_argument("--version", action="version", version="PCAT 0.2.3")
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", title="commands")
 
     add_analyze(sub)
@@ -292,6 +292,7 @@ def add_strings(sub) -> None:
     p.add_argument("--ignore-case", action="store_true", help="Use case-insensitive matching with --grep")
     p.add_argument("--output", metavar="FILE", help="Write extracted strings to a text file")
     p.add_argument("--limit", "--top", dest="limit", type=int, default=200, metavar="N", help="Maximum strings to print to terminal")
+    p.add_argument("--source", choices=["all", "raw", "packet"], default="all", help="String source to scan. all uses enabled raw and packet-payload sources.")
     p.add_argument("--no-raw", action="store_true", help="Skip raw PCAP byte scanning")
     p.add_argument("--no-payloads", action="store_true", help="Skip parsed packet payload scanning")
     p.set_defaults(func=cmd_strings)
@@ -315,6 +316,7 @@ def add_search(sub) -> None:
     p.add_argument("--ignore-case", action="store_true", help="Use case-insensitive matching")
     p.add_argument("--min", type=int, default=5, dest="min_len", metavar="N", help="Minimum printable string length before searching")
     p.add_argument("--limit", "--top", dest="limit", type=int, default=100, metavar="N", help="Maximum matches to print")
+    p.add_argument("--source", choices=["all", "raw", "packet"], default="all", help="String source to search. all uses enabled raw and packet-payload sources.")
     p.add_argument("--no-raw", action="store_true", help="Skip raw PCAP byte scanning")
     p.add_argument("--no-payloads", action="store_true", help="Skip parsed packet payload scanning")
     p.set_defaults(func=cmd_search)
@@ -503,6 +505,7 @@ def cmd_analyze(args) -> int:
         selected = sorted(candidates, key=lambda item: item.score, reverse=True)[: max(0, args.extract_limit)]
         saved = extract_artifacts(path, candidates, artifacts_dir, payload_map, limit=args.extract_limit)
         write_artifact_manifest(selected, artifacts_dir)
+        extraction_summary = artifact_extraction_summary(selected, report.artifacts, include_raw=args.include_raw_artifacts, saved=saved)
         if saved:
             strings = gather_strings(path, payload_rows, include_raw=True)
             build_report_evidence(report, packets, strings)
@@ -514,6 +517,8 @@ def cmd_analyze(args) -> int:
             print(f"Artifacts selected for extraction: {min(len(candidates), args.extract_limit)}")
             print(f"Selected certainty: confirmed={counts['confirmed']} candidate={counts['candidate']} rejected={counts['rejected']}")
             print(f"Artifacts extracted: {len(saved)}")
+            if extraction_summary["skipped_raw_disabled"]:
+                print(f"Raw-capture artifacts skipped: {extraction_summary['skipped_raw_disabled']} (use --include-raw-artifacts to include them)")
     if output_dir and file_formats:
         written = write_reports(report, output_dir, file_formats)
         if args.verbose and not args.quiet and not args.json:
@@ -628,15 +633,18 @@ def cmd_timeline(args) -> int:
     print("-" * 8)
     for event in events:
         if isinstance(event, dict):
-            print(f"{event['timestamp']:.6f} [{event['severity']}] {event['title']} - {event['detail']}")
+            timestamp = format_timeline_timestamp(event.get("timestamp"))
+            print(f"{timestamp} [{event['severity']}] {event['title']} - {event['detail']}")
         else:
-            print(f"{event.timestamp:.6f} [{event.severity}] {event.title} - {event.detail}")
+            timestamp = format_timeline_timestamp(event.timestamp)
+            print(f"{timestamp} [{event.severity}] {event.title} - {event.detail}")
     return 0
 
 
 def cmd_strings(args) -> int:
     path = resolve_input(args)
-    rows = load_strings_for_command(path, args.min_len, not args.no_raw, not args.no_payloads)
+    include_raw, include_payloads = resolve_string_source_flags(args.source, not args.no_raw, not args.no_payloads)
+    rows = load_strings_for_command(path, args.min_len, include_raw, include_payloads)
     if args.grep:
         rows = find_matches(rows, args.grep, regex=True, ignore_case=args.ignore_case)
     if args.output:
@@ -659,7 +667,8 @@ def cmd_strings(args) -> int:
 
 def cmd_search(args) -> int:
     path = resolve_input(args)
-    rows = load_strings_for_command(path, args.min_len, not args.no_raw, not args.no_payloads)
+    include_raw, include_payloads = resolve_string_source_flags(args.source, not args.no_raw, not args.no_payloads)
+    rows = load_strings_for_command(path, args.min_len, include_raw, include_payloads)
     matches = find_matches(rows, args.keyword, regex=args.regex, ignore_case=args.ignore_case)
     if args.json:
         print_json([{"source": source, "text": text} for source, text in matches[: args.limit]])
@@ -686,8 +695,12 @@ def cmd_files(args) -> int:
     print("Detected Files")
     print("-" * 14)
     ranked = sorted(artifacts, key=lambda a: a.score, reverse=True)
-    for idx, artifact in enumerate(ranked[: args.limit], start=1):
-        print(f"{idx}. certainty={artifact.certainty} type={artifact.kind} source={artifact.source} offset={artifact.offset} score={artifact.score} validation={artifact.validation} tags={','.join(artifact.tags)} reason={'; '.join(artifact.reasons)}")
+    display = ranked if args.verbose else [artifact for artifact in ranked if artifact.certainty != "rejected"]
+    for idx, artifact in enumerate(display[: args.limit], start=1):
+        print(format_artifact_row(idx, artifact, include_reasons=True))
+    if not display:
+        print("No confirmed or candidate artifacts found in the selected sources.")
+    print_rejected_artifact_groups(ranked, verbose=args.verbose)
     if len(ranked) > args.limit:
         print(f"... and {len(ranked) - args.limit} more. Use --top/--limit to change this.")
     return 0
@@ -705,11 +718,15 @@ def cmd_artifacts(args) -> int:
         return 0
     print("Artifacts")
     print("-" * 9)
-    for idx, artifact in enumerate(ranked[: args.limit], start=1):
+    display = ranked if args.verbose else [artifact for artifact in ranked if artifact.certainty != "rejected"]
+    for idx, artifact in enumerate(display[: args.limit], start=1):
         status = artifact.extraction_status or "not-extracted"
-        print(f"{idx}. score={artifact.score} certainty={artifact.certainty} type={artifact.kind} source={artifact.source} offset={artifact.offset} validation={artifact.validation} status={status} tags={','.join(artifact.tags)}")
+        print(f"{format_artifact_row(idx, artifact)} status={status}")
         if artifact.reasons:
             print(f"   reason={'; '.join(artifact.reasons)}")
+    if not display:
+        print("No confirmed or candidate artifacts found in the selected sources.")
+    print_rejected_artifact_groups(ranked, verbose=args.verbose)
     if len(ranked) > args.limit:
         print(f"... and {len(ranked) - args.limit} more. Use --top/--limit to change this.")
     return 0
@@ -719,23 +736,48 @@ def cmd_extract(args) -> int:
     path = resolve_input(args)
     out = prepare_output_dir(Path(args.out) if args.out else default_output_dir(path), args.force)
     include_raw = bool(args.include_raw) and not args.no_raw
-    artifacts = load_artifacts_for_command(path, include_raw, not args.no_payloads)
     _, payload_map = payload_sources(parse_packets(path)) if not args.no_payloads else ([], {})
+    all_artifacts = [score_artifact(artifact) for artifact in detect_artifacts(path, list(payload_map.items()), include_raw=True)]
+    artifacts = [artifact for artifact in all_artifacts if include_raw or artifact.source != "raw-file"]
     ranked = sorted(artifacts, key=lambda a: a.score, reverse=True)
     selected = ranked[: max(0, args.limit)]
     saved = extract_artifacts(path, ranked, out / "artifacts", payload_map, limit=args.limit)
     manifest = write_artifact_manifest(selected, out / "artifacts")
     counts = artifact_certainty_counts(selected)
+    summary = artifact_extraction_summary(selected, all_artifacts, include_raw=include_raw, saved=saved)
+    http_export = None
     if args.http:
-        run_tshark_export_http(path, out)
+        http_export = run_tshark_export_http(path, out)
+        summary["http_objects_exported"] = http_export["exported_count"]
+        summary["http_objects_dir"] = http_export["output_dir"]
+        summary["http_export_status"] = http_export["status"]
     if args.json:
-        print_json({"output_dir": str(out), "manifest": str(manifest), "found": len(artifacts), "selected": len(selected), "certainty_counts": counts, "extracted_count": len(saved), "extracted": saved})
+        print_json({
+            "output_dir": str(out),
+            "manifest": str(manifest),
+            "found": len(all_artifacts),
+            "selected": len(selected),
+            "certainty_counts": counts,
+            "extraction_summary": summary,
+            "http_export": http_export,
+            "extracted_count": len(saved),
+            "extracted": saved,
+            "selected_artifacts": selected,
+        })
         return 0
-    print(f"Artifacts found: {len(artifacts)}")
+    print(f"Artifacts found: {len(all_artifacts)}")
     print(f"Artifacts selected for extraction: {len(selected)}")
     print(f"Selected certainty: confirmed={counts['confirmed']} candidate={counts['candidate']} rejected={counts['rejected']}")
+    if summary["skipped_raw_disabled"]:
+        print(f"Raw-capture artifacts skipped: {summary['skipped_raw_disabled']} (use --include-raw to include raw PCAP byte hits)")
+    if summary["validation_failed"] or summary["skipped_incomplete"] or summary["missing_source"]:
+        print(f"Skipped selected artifacts: validation_failed={summary['validation_failed']} incomplete={summary['skipped_incomplete']} missing_source={summary['missing_source']}")
+    if http_export:
+        print(f"HTTP objects exported: {http_export['exported_count']} to {http_export['output_dir']} ({http_export['status']})")
+        if http_export.get("error") and args.verbose:
+            print(f"HTTP export detail: {http_export['error']}")
     if not saved:
-        print("Artifacts extracted: 0")
+        print(f"Artifacts extracted: 0")
         print("No artifacts were extracted. Selected hits were rejected, missing source data, or otherwise not extractable.")
         print(f"Manifest written to {manifest}")
         return 0
@@ -766,7 +808,8 @@ def cmd_suspicious(args) -> int:
     print("")
     print("Next steps:")
     if has_extractable_artifacts(ranked):
-        print(f"- pcat extract -i {shlex.quote(str(path))} -o {shlex.quote(str(default_output_dir(path)))}")
+        command = extract_command_for_artifacts(path, ranked)
+        print(f"- {command}")
         print("- Run file/strings against extracted artifacts if needed.")
     else:
         print("- No extractable artifacts in this filtered set; inspect artifact metadata first.")
@@ -783,7 +826,8 @@ def cmd_hunt(args) -> int:
     decoded = []
     for source, text in rows:
         for item in decode_interesting(text):
-            decoded.append((source, item))
+            if args.verbose or decoded_default_visible(item):
+                decoded.append((source, item))
     fragments = decoded_payload_fragments(packets)
     for packet, encoded, decoded_text in fragments:
         decoded.append((f"packet:{packet.frame_number}", f"base64-fragment:{encoded} -> {decoded_text}"))
@@ -824,15 +868,20 @@ def cmd_hunt(args) -> int:
     print("Detected Files")
     print("-" * 14)
     if artifacts:
-        for artifact in sorted(artifacts, key=lambda a: a.score, reverse=True)[: args.limit]:
+        ranked_artifacts = sorted(artifacts, key=lambda a: a.score, reverse=True)
+        display_artifacts = ranked_artifacts if args.verbose else [artifact for artifact in ranked_artifacts if artifact.certainty != "rejected"]
+        for artifact in display_artifacts[: args.limit]:
             print(f"[{artifact.certainty} {artifact.kind}] source={artifact.source} offset={artifact.offset} score={artifact.score} validation={artifact.validation}")
+        if not display_artifacts:
+            print("No confirmed or candidate artifacts found.")
+        print_rejected_artifact_groups(ranked_artifacts, verbose=args.verbose)
     else:
         print("No common magic-byte file signatures detected.")
     print("")
     print("Recommended Next Steps")
     print("-" * 22)
     if has_extractable_artifacts(artifacts):
-        print(f"- Extract artifacts: pcat extract -i {shlex.quote(str(path))} -o {shlex.quote(str(default_output_dir(path)))}")
+        print(f"- Extract artifacts: {extract_command_for_artifacts(path, artifacts)}")
     elif artifacts:
         print("- Artifact signatures were rejected by validation; inspect pcat artifacts output before attempting extraction.")
     if flags or creds:
@@ -849,7 +898,7 @@ def cmd_doctor(args) -> int:
         "purpose": "optional ML anomaly scoring",
     }
     result = {
-        "pcat_version": "0.2.2",
+        "pcat_version": "0.2.3",
         "python": sys.version.split()[0],
         "tools": tools,
         "python_packages": [optional_ml],
@@ -911,6 +960,14 @@ def load_strings_for_command(path: Path, min_len: int, include_raw: bool, includ
     return deduped
 
 
+def resolve_string_source_flags(source: str, include_raw: bool, include_payloads: bool) -> tuple[bool, bool]:
+    if source == "raw":
+        return True, False
+    if source == "packet":
+        return False, True
+    return include_raw, include_payloads
+
+
 def load_artifacts_for_command(path: Path, include_raw: bool, include_payloads: bool):
     payloads = []
     if include_payloads:
@@ -922,7 +979,28 @@ def load_artifacts_for_command(path: Path, include_raw: bool, include_payloads: 
 
 
 def has_extractable_artifacts(artifacts) -> bool:
-    return any(artifact.certainty != "rejected" for artifact in artifacts)
+    return any(artifact_is_extractable(artifact) for artifact in artifacts)
+
+
+def artifact_is_extractable(artifact) -> bool:
+    return (
+        artifact.certainty != "rejected"
+        and artifact.validation != "truncated"
+        and artifact.complete_file_valid is not False
+    )
+
+
+def extract_command_for_artifacts(path: Path, artifacts) -> str:
+    command = f"pcat extract -i {shlex.quote(str(path))} -o {shlex.quote(str(default_output_dir(path)))}"
+    if needs_include_raw(artifacts):
+        command += " --include-raw"
+    return command
+
+
+def needs_include_raw(artifacts) -> bool:
+    raw = [artifact for artifact in artifacts if artifact.source == "raw-file" and artifact_is_extractable(artifact)]
+    packet = [artifact for artifact in artifacts if artifact.source != "raw-file" and artifact_is_extractable(artifact)]
+    return bool(raw) and not packet
 
 
 def artifact_certainty_counts(artifacts) -> dict[str, int]:
@@ -933,11 +1011,83 @@ def artifact_certainty_counts(artifacts) -> dict[str, int]:
     return counts
 
 
-def run_tshark_export_http(path: Path, out: Path) -> None:
+def artifact_extraction_summary(selected, all_artifacts, include_raw: bool, saved) -> dict[str, int | str]:
+    return {
+        "found": len(all_artifacts),
+        "selected": len(selected),
+        "extracted": len(saved),
+        "rejected": sum(1 for artifact in selected if artifact.certainty == "rejected"),
+        "skipped_raw_disabled": sum(1 for artifact in all_artifacts if artifact.source == "raw-file" and not include_raw),
+        "validation_failed": sum(1 for artifact in selected if artifact.extraction_status == "skipped_invalid"),
+        "skipped_incomplete": sum(1 for artifact in selected if artifact.extraction_status == "skipped_incomplete"),
+        "missing_source": sum(1 for artifact in selected if artifact.extraction_status == "skipped_missing_source"),
+        "http_objects_exported": 0,
+        "http_objects_dir": "",
+        "http_export_status": "not_requested",
+    }
+
+
+def rejected_artifact_groups(artifacts) -> dict[tuple[str, str, str], int]:
+    groups: dict[tuple[str, str, str], int] = {}
+    for artifact in artifacts:
+        if artifact.certainty != "rejected":
+            continue
+        reason = artifact.skip_reason or next((item for item in artifact.reasons if "invalid" in item or "complete" in item), "validation rejected")
+        key = (artifact.kind, artifact.validation, reason)
+        groups[key] = groups.get(key, 0) + 1
+    return groups
+
+
+def print_rejected_artifact_groups(artifacts, verbose: bool = False) -> None:
+    if verbose:
+        return
+    groups = rejected_artifact_groups(artifacts)
+    if not groups:
+        return
+    print("")
+    print("Rejected artifact groups")
+    print("-" * 24)
+    for (kind, validation, reason), count in sorted(groups.items()):
+        print(f"- {count} {kind} hit(s): validation={validation} reason={reason}")
+    print("Use --verbose or --json to inspect individual rejected offsets.")
+
+
+def format_artifact_row(index: int, artifact, include_reasons: bool = False) -> str:
+    base = (
+        f"{index}. score={artifact.score} certainty={artifact.certainty} type={artifact.kind} "
+        f"source={artifact.source} scope={artifact.source_scope} offset={artifact.offset} "
+        f"validation={artifact.validation} complete={artifact.complete_file_valid} "
+        f"truncated={artifact.truncated} tags={','.join(artifact.tags)}"
+    )
+    if include_reasons and artifact.reasons:
+        return f"{base} reason={'; '.join(artifact.reasons)}"
+    return base
+
+
+def format_timeline_timestamp(value) -> str:
+    if value is None:
+        return "unknown"
+    return f"{float(value):.6f}"
+
+
+def decoded_default_visible(text: str) -> bool:
+    lowered = text.lower()
+    return any(token in lowered for token in ["flag", "ctf{", "password", "passwd", "token", "secret", "base85", "base64-fragment"])
+
+
+def run_tshark_export_http(path: Path, out: Path) -> dict[str, str | int]:
     http_dir = out / "http_objects"
     http_dir.mkdir(parents=True, exist_ok=True)
     cmd = ["tshark", "-r", str(path), "--export-objects", f"http,{http_dir}"]
-    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    try:
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    except FileNotFoundError as exc:
+        return {"output_dir": str(http_dir), "exported_count": 0, "status": "missing_tshark", "error": str(exc)}
+    after = {item for item in http_dir.rglob("*") if item.is_file()}
+    exported = len(after)
+    status = "ok" if result.returncode == 0 else "failed"
+    error = result.stderr.strip()
+    return {"output_dir": str(http_dir), "exported_count": exported, "status": status, "error": error}
 
 
 def print_summary(report, top: int) -> None:

@@ -58,15 +58,15 @@ def artifact_stories(report: AnalysisReport) -> list[EvidenceStory]:
             why = "PCAT validated the file structure after a magic-byte match, so these are the safest artifact leads to inspect first."
             severity = severity_from_score(top_score)
             confidence = "high"
-            command = f"pcat extract -i {report.summary.file}"
+            command = f"pcat extract -i {report.summary.file}{' --include-raw' if raw_only(artifacts, report.artifacts) else ''}"
             limitations: list[str] = []
         elif certainty == "candidate":
             title = f"{len(artifacts)} artifact candidate(s) need validation"
-            why = "PCAT found file signatures but could not fully validate the structure. Treat these as leads, not confirmed files."
+            why = "PCAT found file signatures but could not fully validate structure and completeness. Treat these as leads, not confirmed files."
             severity = severity_from_score(top_score)
             confidence = "medium"
             command = f"pcat artifacts -i {report.summary.file} --json"
-            limitations = ["Candidate artifacts may be incomplete, carved from partial payloads, or unsupported by PCAT's validator."]
+            limitations = ["Candidate artifacts may be incomplete, truncated, carved from partial payloads, or unsupported by PCAT's validator."]
         else:
             title = f"{len(artifacts)} rejected file signature hit(s) skipped"
             why = "Magic bytes were present, but structure validation failed. PCAT preserved the observation while avoiding misleading extraction output."
@@ -87,6 +87,8 @@ def artifact_stories(report: AnalysisReport) -> list[EvidenceStory]:
                 "artifact_ids": [item.artifact_id for item in artifacts[:25]],
                 "kinds": dict(Counter(item.kind for item in artifacts)),
                 "sources": dict(Counter(item.source for item in artifacts)),
+                "source_scopes": dict(Counter(item.source_scope for item in artifacts)),
+                "truncated_count": sum(1 for item in artifacts if item.truncated),
             },
             recommended_next_command=command,
             limitations=limitations,
@@ -264,6 +266,12 @@ def fallback_commands(report: AnalysisReport) -> list[str]:
     if report.artifacts:
         commands.append(f"pcat artifacts -i {file} --json")
     return commands
+
+
+def raw_only(group: list[ArtifactRecord], all_artifacts: list[ArtifactRecord]) -> bool:
+    raw_extractable = [item for item in group if item.source == "raw-file" and item.certainty != "rejected"]
+    packet_extractable = [item for item in all_artifacts if item.source != "raw-file" and item.certainty != "rejected"]
+    return bool(raw_extractable) and not packet_extractable
 
 
 def evidence_ids_by_type(evidence: list[EvidenceRecord], types: set[str]) -> list[str]:
