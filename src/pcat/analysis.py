@@ -873,7 +873,7 @@ def tftp_findings(transfers: list[TftpTransferRecord]) -> list[Finding]:
             score,
             [f"{transfer.transfer_id}: " + "; ".join(details)],
             "TFTP commonly carries firmware, boot images, configuration files, and CTF payloads over UDP.",
-            "Run pcat tftp to inspect transfer metadata and export recoverable objects.",
+            "Run pcat evidence --type tftp_transfer to inspect metadata, or pcat extract --tftp to export recoverable objects.",
             transfer.client_ip,
             transfer.server_ip,
             related=transfer.transfer_id,

@@ -12,6 +12,37 @@ def test_cli_help(capsys):
     assert "PCAP Assistant for Triage" in output
 
 
+def test_cli_help_hides_compatibility_commands(capsys):
+    assert main(["--help"]) == 0
+    output = capsys.readouterr().out
+    assert " tftp " not in output
+    assert " files " not in output
+    assert " suspicious " not in output
+    assert "extract" in output
+    assert "artifacts" in output
+
+
+def test_simple_help_global_and_command(capsys):
+    assert main(["--help-simple"]) == 0
+    output = capsys.readouterr().out
+    assert "PCAT quick help" in output
+    assert "extract" in output
+
+    assert main(["extract", "--help-simple"]) == 0
+    output = capsys.readouterr().out
+    assert "pcat extract" in output
+    assert "--tftp" in output
+    assert "--include-incomplete-tftp" not in output
+    assert "--no-payloads" not in output
+
+
+def test_simple_help_before_command(capsys):
+    assert main(["--help-simple", "evidence"]) == 0
+    output = capsys.readouterr().out
+    assert "pcat evidence" in output
+    assert "--type TYPE" in output
+
+
 def test_subcommand_help_after_command(capsys):
     assert main(["analyze", "-h"]) == 0
     output = capsys.readouterr().out
@@ -148,6 +179,47 @@ def test_extract_reports_http_export_separately(tmp_path, capsys, monkeypatch):
     assert code == 0
     assert "HTTP objects exported: 2" in output
     assert "Artifacts extracted: 0" in output
+
+
+def test_extract_exports_tftp_transfer(tmp_path, capsys, monkeypatch):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"plain capture placeholder")
+    out = tmp_path / "case"
+
+    def fake_parse(_path):
+        return [
+            PacketRecord(
+                frame_number=1,
+                timestamp=1.0,
+                length=42,
+                protocol="TFTP",
+                src_ip="10.0.0.2",
+                dst_ip="10.0.0.3",
+                tftp_opcode="1",
+                tftp_source_file="firmware.bin",
+                tftp_type="octet",
+            ),
+            PacketRecord(
+                frame_number=2,
+                timestamp=1.1,
+                length=47,
+                protocol="TFTP",
+                src_ip="10.0.0.3",
+                dst_ip="10.0.0.2",
+                tftp_opcode="3",
+                tftp_request_frame="1",
+                tftp_block="1",
+                tftp_data=b"hello".hex(),
+            ),
+        ]
+
+    monkeypatch.setattr("pcat.cli.parse_packets", fake_parse)
+    code = main(["extract", "-i", str(sample), "--no-payloads", "--tftp", "-o", str(out)])
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "TFTP objects exported: 1" in output
+    assert "No artifact signatures were carved" in output
+    assert (out / "tftp_objects" / "firmware.bin").read_bytes() == b"hello"
 
 
 def test_analyze_redact_returns_unsupported_argument(tmp_path, capsys):

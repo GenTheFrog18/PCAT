@@ -42,6 +42,8 @@ from .utils import default_output_dir, format_shell_command, prepare_output_dir,
 
 
 DEFAULT_FORMATS = {"html", "json", "csv"}
+PCAT_VERSION = "0.2.4.1"
+HIDDEN_COMPAT_COMMANDS = {"files", "suspicious", "tftp"}
 
 
 class PCATFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
@@ -49,7 +51,11 @@ class PCATFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescript
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = argv if argv is not None else sys.argv[1:]
+    argv = list(argv if argv is not None else sys.argv[1:])
+    simple_help_command = simple_help_command_from_args(argv)
+    if simple_help_command is not None:
+        print_simple_help(simple_help_command)
+        return 0
     argv = normalize_help_args(argv)
     parser = build_parser()
     try:
@@ -88,6 +94,248 @@ def normalize_help_args(argv: list[str]) -> list[str]:
     return argv
 
 
+def simple_help_command_from_args(argv: list[str]) -> str | None:
+    """Return the command requested by --help-simple, or "" for global help."""
+    if not argv:
+        return None
+    if argv[0] == "help-simple":
+        return argv[1] if len(argv) > 1 else ""
+    if "--help-simple" not in argv:
+        return None
+    idx = argv.index("--help-simple")
+    if idx == 0:
+        return argv[1] if len(argv) > 1 and not argv[1].startswith("-") else ""
+    return argv[0] if argv[0] not in {"-h", "--help"} else ""
+
+
+def print_simple_help(command: str) -> None:
+    if not command:
+        print("""PCAT quick help
+Usage:
+  pcat analyze -i capture.pcap
+  pcat summary -i capture.pcap
+  pcat hunt -i capture.pcap
+  pcat extract -i capture.pcap --http --tftp -o case-output
+
+Common commands:
+  analyze    Full triage report and optional report files
+  summary    Quick capture overview
+  streams    TCP streams and UDP conversations
+  dns        DNS records
+  http       HTTP records
+  evidence   Structured evidence records
+  timeline   Chronological evidence timeline
+  strings    Printable strings from raw bytes and payloads
+  search     Search strings, evidence, protocols, findings, and artifacts
+  artifacts  Artifact candidates with validation and ranking
+  extract    Carve artifacts and export HTTP/TFTP objects
+  hunt       CTF-oriented triage workflow
+  doctor     Dependency check
+
+More help:
+  pcat <command> --help
+  pcat <command> --help-simple
+""")
+        return
+
+    simple = SIMPLE_COMMAND_HELP.get(command)
+    if simple:
+        print(simple)
+        return
+    if command in HIDDEN_COMPAT_COMMANDS:
+        print(f"""pcat {command}
+This compatibility command is hidden from normal help.
+
+Preferred commands:
+  pcat artifacts -i capture.pcap
+  pcat extract -i capture.pcap --tftp -o case-output
+  pcat evidence -i capture.pcap --type tftp_transfer --json
+""")
+        return
+    print(f"Unknown command for simple help: {command}", file=sys.stderr)
+
+
+SIMPLE_COMMAND_HELP = {
+    "analyze": """pcat analyze
+Run the full triage pipeline and optionally write reports.
+
+Usage:
+  pcat analyze -i capture.pcap
+  pcat analyze -i capture.pcap --ctf --extract -o case-output
+
+Common options:
+  -i, --input PCAP
+  --ctf
+  --extract
+  -o, --out DIR
+  -f, --format html,json,csv,md,txt
+  --top N
+  --json
+""",
+    "summary": """pcat summary
+Show a quick capture overview.
+
+Usage:
+  pcat summary -i capture.pcap
+  pcat summary -i capture.pcap --top 20
+
+Common options:
+  -i, --input PCAP
+  --top N
+  --json
+""",
+    "streams": """pcat streams
+Show ranked TCP streams and UDP conversations.
+
+Usage:
+  pcat streams -i capture.pcap
+  pcat streams -i capture.pcap --top 25
+
+Common options:
+  -i, --input PCAP
+  --top N
+  --json
+""",
+    "dns": """pcat dns
+Show DNS queries and records.
+
+Usage:
+  pcat dns -i capture.pcap
+  pcat dns -i capture.pcap --top 50
+
+Common options:
+  -i, --input PCAP
+  --top N
+  --json
+""",
+    "http": """pcat http
+Show plaintext HTTP records.
+
+Usage:
+  pcat http -i capture.pcap
+  pcat http -i capture.pcap --top 50
+
+Common options:
+  -i, --input PCAP
+  --top N
+  --json
+""",
+    "evidence": """pcat evidence
+Show structured evidence records.
+
+Usage:
+  pcat evidence -i capture.pcap
+  pcat evidence -i capture.pcap --type tftp_transfer --json
+
+Common options:
+  -i, --input PCAP
+  --type TYPE
+  --top N
+  --json
+""",
+    "timeline": """pcat timeline
+Show chronological findings and evidence events.
+
+Usage:
+  pcat timeline -i capture.pcap
+  pcat timeline -i capture.pcap --top 100 --json
+
+Common options:
+  -i, --input PCAP
+  --top N
+  --json
+""",
+    "strings": """pcat strings
+Extract printable strings from raw bytes and packet payloads.
+
+Usage:
+  pcat strings -i capture.pcap
+  pcat strings -i capture.pcap --grep flag --ignore-case
+  pcat strings -i capture.pcap --output strings.txt
+
+Common options:
+  -i, --input PCAP
+  --grep PATTERN
+  --ignore-case
+  --output FILE
+  --limit N
+  --json
+""",
+    "search": """pcat search
+Search PCAT strings, evidence, protocols, findings, and artifacts.
+
+Usage:
+  pcat search -i capture.pcap password
+  pcat search -i capture.pcap "flag\\{.*\\}" --regex --ignore-case
+
+Common options:
+  -i, --input PCAP
+  KEYWORD
+  --regex
+  --ignore-case
+  --scope all|strings|decoded|evidence|protocols|artifacts|findings
+  --limit N
+  --json
+""",
+    "artifacts": """pcat artifacts
+Show detected artifact candidates with validation and ranking.
+
+Usage:
+  pcat artifacts -i capture.pcap
+  pcat artifacts -i capture.pcap --include-raw --suspicious
+
+Common options:
+  -i, --input PCAP
+  --include-raw
+  --type LIST
+  --min-score N
+  --suspicious
+  --limit N
+  --json
+""",
+    "extract": """pcat extract
+Carve validated artifacts and export protocol objects.
+
+Usage:
+  pcat extract -i capture.pcap -o case-output
+  pcat extract -i capture.pcap --http --tftp -o case-output
+
+Common options:
+  -i, --input PCAP
+  -o, --out DIR
+  --force
+  --include-raw
+  --http
+  --tftp
+  --limit N
+  --json
+""",
+    "hunt": """pcat hunt
+Run a CTF-oriented triage workflow.
+
+Usage:
+  pcat hunt -i capture.pcap
+  pcat hunt -i capture.pcap --ctf-flag "CTF{<flag>}"
+
+Common options:
+  -i, --input PCAP
+  --ctf-flag PATTERN
+  --limit N
+  --json
+""",
+    "doctor": """pcat doctor
+Check PCAT dependencies and local tool availability.
+
+Usage:
+  pcat doctor
+  pcat doctor --json
+
+Common options:
+  --json
+""",
+}
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pcat",
@@ -97,15 +345,18 @@ def build_parser() -> argparse.ArgumentParser:
   pcat analyze -i capture.pcap
   pcat analyze -i capture.pcap --ctf --extract -o pcat/demo
   pcat strings -i capture.pcap --grep flag --ignore-case
+  pcat extract -i capture.pcap --http --tftp -o pcat/demo
   pcat hunt -i capture.pcap
 
 Command help:
   pcat analyze -h
   pcat -h analyze
   pcat help analyze
+  pcat --help-simple
+  pcat extract --help-simple
 """,
     )
-    parser.add_argument("--version", action="version", version="PCAT 0.2.4")
+    parser.add_argument("--version", action="version", version=f"PCAT {PCAT_VERSION}")
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", title="commands")
 
     add_analyze(sub)
@@ -125,6 +376,10 @@ Command help:
     add_hunt(sub)
     add_doctor(sub)
     return parser
+
+
+def hide_subcommand(sub, name: str) -> None:
+    sub._choices_actions = [item for item in sub._choices_actions if item.dest != name]
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -250,14 +505,14 @@ def add_tftp(sub) -> None:
     p = sub.add_parser(
         "tftp",
         help="Show and export TFTP transfers",
-        description="Group TFTP request/data/error packets into transfer records and optionally export recoverable payloads.",
+        description="Hidden compatibility command. Prefer `pcat extract --tftp` for export and `pcat evidence --type tftp_transfer` for metadata.",
         formatter_class=PCATFormatter,
         epilog="""Examples:
-  pcat tftp -i capture.pcap
-  pcat tftp capture.pcap --json
-  pcat tftp -i capture.pcap --export -o pcat/tftp-case
+  pcat extract -i capture.pcap --tftp -o pcat/tftp-case
+  pcat evidence -i capture.pcap --type tftp_transfer --json
 """,
     )
+    hide_subcommand(sub, "tftp")
     add_common(p)
     add_output(p)
     p.add_argument("--export", action="store_true", help="Write recoverable TFTP objects to <out>/tftp_objects/")
@@ -361,6 +616,7 @@ def add_files(sub) -> None:
   pcat files capture.pcap --no-raw
 """,
     )
+    hide_subcommand(sub, "files")
     add_common(p)
     p.add_argument("--no-raw", action="store_true", help="Skip raw PCAP byte scanning")
     p.add_argument("--no-payloads", action="store_true", help="Skip parsed packet payload scanning")
@@ -396,17 +652,20 @@ def add_artifacts(sub) -> None:
 def add_extract(sub) -> None:
     p = sub.add_parser(
         "extract",
-        help="Extract/carve detected artifacts",
-        description="Best-effort carving of detected artifacts into <out>/artifacts/.",
+        help="Extract artifacts and export HTTP/TFTP objects",
+        description="Best-effort artifact carving plus supported protocol object export into a PCAT output folder.",
         formatter_class=PCATFormatter,
         epilog="""Examples:
   pcat extract -i capture.pcap -o pcat/demo
   pcat extract -i capture.pcap --http -o pcat/http-demo --force
+  pcat extract -i capture.pcap --tftp -o pcat/tftp-demo
 """,
     )
     add_common(p)
     add_output(p)
     p.add_argument("--http", action="store_true", help="Export HTTP objects with tshark when possible")
+    p.add_argument("--tftp", action="store_true", help="Export recoverable TFTP transfer objects to <out>/tftp_objects/")
+    p.add_argument("--include-incomplete-tftp", action="store_true", help="Export incomplete or unknown-completeness TFTP transfers when bytes are available")
     p.add_argument("--include-raw", action="store_true", help="Include raw PCAP byte carving. Disabled by default to reduce false-positive extraction.")
     p.add_argument("--no-raw", action="store_true", help="Legacy alias kept for scripts; raw carving is already disabled by default")
     p.add_argument("--no-payloads", action="store_true", help="Skip parsed packet payload carving")
@@ -425,6 +684,7 @@ def add_suspicious(sub) -> None:
   pcat suspicious capture.pcap --type zip,pdf,png --min-risk 30
 """,
     )
+    hide_subcommand(sub, "suspicious")
     add_common(p)
     p.add_argument("--no-raw", action="store_true", help="Skip raw PCAP byte scanning")
     p.add_argument("--no-payloads", action="store_true", help="Skip parsed packet payload scanning")
@@ -640,12 +900,17 @@ def cmd_http(args) -> int:
 
 
 def cmd_tftp(args) -> int:
+    print(
+        "Warning: pcat tftp is deprecated; use `pcat extract --tftp` for export "
+        "or `pcat evidence --type tftp_transfer` for metadata.",
+        file=sys.stderr,
+    )
     path = resolve_input(args)
     report = analyze(path, AnalyzeOptions(no_ml=True, min_risk=0))
     export_summary = None
     if args.export and report.tftp_transfers:
         out = prepare_output_dir(Path(args.out) if args.out else default_output_dir(path), args.force)
-        export_summary = export_tftp_transfers(report, out / "tftp_objects", args.top, args.include_incomplete)
+        export_summary = export_tftp_transfers(report.tftp_records, report.tftp_transfers, out / "tftp_objects", args.top, args.include_incomplete)
     elif args.export:
         export_summary = {"output_dir": "", "exported": 0, "skipped": 0, "exported_records": [], "skipped_records": [], "status": "no_tftp_transfers"}
     if args.json:
@@ -841,7 +1106,8 @@ def cmd_extract(args) -> int:
     path = resolve_input(args)
     out = prepare_output_dir(Path(args.out) if args.out else default_output_dir(path), args.force)
     include_raw = bool(args.include_raw) and not args.no_raw
-    _, payload_map = payload_sources(parse_packets(path)) if not args.no_payloads else ([], {})
+    packets = parse_packets(path) if (not args.no_payloads or args.tftp) else []
+    _, payload_map = payload_sources(packets) if not args.no_payloads else ([], {})
     all_artifacts = [score_artifact(artifact) for artifact in detect_artifacts(path, list(payload_map.items()), include_raw=True)]
     artifacts = [artifact for artifact in all_artifacts if include_raw or artifact.source != "raw-file"]
     selected = selectable_artifacts(artifacts, payload_map)[: max(0, args.limit)]
@@ -855,6 +1121,26 @@ def cmd_extract(args) -> int:
         summary["http_objects_exported"] = http_export["exported_count"]
         summary["http_objects_dir"] = http_export["output_dir"]
         summary["http_export_status"] = http_export["status"]
+    tftp_export = None
+    if args.tftp:
+        tftp_records = build_tftp_records(packets)
+        tftp_transfers = build_tftp_transfers(tftp_records)
+        if tftp_transfers:
+            tftp_export = export_tftp_transfers(tftp_records, tftp_transfers, out / "tftp_objects", args.limit, args.include_incomplete_tftp)
+        else:
+            tftp_export = {
+                "output_dir": str(out / "tftp_objects"),
+                "exported": 0,
+                "skipped": 0,
+                "exported_records": [],
+                "skipped_records": [],
+                "status": "no_tftp_transfers",
+            }
+        summary["tftp_transfers_found"] = len(tftp_transfers)
+        summary["tftp_objects_exported"] = tftp_export["exported"]
+        summary["tftp_objects_dir"] = tftp_export["output_dir"]
+        summary["tftp_export_status"] = tftp_export["status"]
+        summary["tftp_transfers_skipped"] = tftp_export["skipped"]
     if args.json:
         print_json({
             "output_dir": str(out),
@@ -864,6 +1150,7 @@ def cmd_extract(args) -> int:
             "certainty_counts": counts,
             "extraction_summary": summary,
             "http_export": http_export,
+            "tftp_export": tftp_export,
             "extracted_count": len(saved),
             "extracted": saved,
             "selected_artifacts": selected,
@@ -881,9 +1168,18 @@ def cmd_extract(args) -> int:
         print(f"HTTP objects exported: {http_export['exported_count']} to {http_export['output_dir']} ({http_export['status']})")
         if http_export.get("error") and args.verbose:
             print(f"HTTP export detail: {http_export['error']}")
+    if tftp_export:
+        print(f"TFTP transfers found: {summary['tftp_transfers_found']}")
+        print(f"TFTP objects exported: {tftp_export['exported']} to {tftp_export['output_dir']} ({tftp_export['status']})")
+        if tftp_export["skipped"]:
+            print(f"TFTP transfers skipped: {tftp_export['skipped']} (use --include-incomplete-tftp to export incomplete transfers with bytes)")
     if not saved:
         print(f"Artifacts extracted: 0")
-        print("No artifacts were extracted. Selected hits were rejected, missing source data, or otherwise not extractable.")
+        protocol_objects_exported = bool((http_export and http_export["exported_count"]) or (tftp_export and tftp_export["exported"]))
+        if protocol_objects_exported:
+            print("No artifact signatures were carved; protocol object export completed separately.")
+        else:
+            print("No artifacts were extracted. Selected hits were rejected, missing source data, or otherwise not extractable.")
         print(f"Manifest written to {manifest}")
         return 0
     print(f"Artifacts extracted: {len(saved)} to {out / 'artifacts'}")
@@ -997,7 +1293,9 @@ def cmd_hunt(args) -> int:
     elif artifacts:
         print("- Artifact signatures were rejected by validation; inspect pcat artifacts output before attempting extraction.")
     if tftp_transfers:
-        print(f"- Inspect TFTP transfers: {format_shell_command(['pcat', 'tftp', '-i', path, '--json'])}")
+        print(f"- Inspect TFTP transfer metadata: {format_shell_command(['pcat', 'evidence', '-i', path, '--type', 'tftp_transfer', '--json'])}")
+        if any(transfer.completeness == "complete" and transfer.byte_count for transfer in tftp_transfers):
+            print(f"- Export TFTP objects: {format_shell_command(['pcat', 'extract', '-i', path, '--tftp', '-o', default_output_dir(path)])}")
     if flags or creds:
         print(f"- Save strings: {format_shell_command(['pcat', 'strings', '-i', path, '--output', 'strings.txt'])}")
     print(f"- Run full report: {format_shell_command(['pcat', 'analyze', '-i', path, '--ctf', '--extract', '-o', default_output_dir(path)])}")
@@ -1039,7 +1337,7 @@ def cmd_doctor(args) -> int:
         "purpose": "optional ML anomaly scoring",
     }
     result = {
-        "pcat_version": "0.2.4",
+        "pcat_version": PCAT_VERSION,
         "python": sys.version.split()[0],
         "tools": tools,
         "python_packages": [optional_ml],
@@ -1311,6 +1609,11 @@ def artifact_extraction_summary(selected, all_artifacts, include_raw: bool, save
         "http_objects_exported": 0,
         "http_objects_dir": "",
         "http_export_status": "not_requested",
+        "tftp_transfers_found": 0,
+        "tftp_objects_exported": 0,
+        "tftp_objects_dir": "",
+        "tftp_export_status": "not_requested",
+        "tftp_transfers_skipped": 0,
     }
 
 
@@ -1377,14 +1680,14 @@ def run_tshark_export_http(path: Path, out: Path) -> dict[str, str | int]:
     return {"output_dir": str(http_dir), "exported_count": exported, "status": status, "error": error}
 
 
-def export_tftp_transfers(report, out_dir: Path, limit: int, include_incomplete: bool) -> dict[str, object]:
+def export_tftp_transfers(records, transfers, out_dir: Path, limit: int, include_incomplete: bool) -> dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     exported = []
     skipped = []
     used_names: set[str] = set()
-    for transfer in report.tftp_transfers[: max(0, limit)]:
-        records = tftp_records_for_transfer(report.tftp_records, transfer)
-        blob = tftp_reconstructed_bytes(records)
+    for transfer in transfers[: max(0, limit)]:
+        transfer_records = tftp_records_for_transfer(records, transfer)
+        blob = tftp_reconstructed_bytes(transfer_records)
         if not blob:
             skipped.append({"transfer_id": transfer.transfer_id, "reason": "no_reconstructed_bytes"})
             continue
@@ -1409,6 +1712,7 @@ def export_tftp_transfers(report, out_dir: Path, limit: int, include_incomplete:
         "skipped": len(skipped),
         "exported_records": exported,
         "skipped_records": skipped,
+        "status": "ok" if exported else "all_skipped" if skipped else "no_exported_objects",
     }
 
 

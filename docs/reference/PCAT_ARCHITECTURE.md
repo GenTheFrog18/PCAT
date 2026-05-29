@@ -248,19 +248,18 @@ Current command surface:
 - `streams`: TCP stream and UDP conversation view.
 - `dns`: DNS-focused view.
 - `http`: HTTP-focused view.
-- `tftp`: TFTP transfer view and best-effort export.
 - `evidence`: structured evidence records.
 - `timeline`: chronological finding/evidence view.
 - `strings`: printable strings from raw bytes and payloads.
 - `search`: global evidence search across strings, decoded values, protocols, evidence, findings, and artifacts.
-- `files`: deprecated compatibility alias for artifact detection.
 - `artifacts`: artifact manager view.
-- `extract`: artifact extraction and manifest writing.
-- `suspicious`: deprecated compatibility alias for suspicious artifact ranking.
+- `extract`: artifact extraction, manifest writing, and HTTP/TFTP object export.
 - `hunt`: CTF-oriented hunt.
 - `doctor`: environment and dependency check.
 
-Every command supports `--json`.
+Hidden compatibility aliases remain callable for scripts but are not part of the normal help workflow: `files`, `suspicious`, and `tftp`.
+
+Every public command supports `--json`.
 
 ## Dependency Model
 

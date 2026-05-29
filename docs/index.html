@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PCAT - PCAP Assistant for Triage</title>
+    <meta name="description" content="PCAT is an offline command-line tool for first-pass packet capture analysis, evidence handoff, CTF triage, and artifact extraction.">
+    <meta property="og:title" content="PCAT - PCAP Assistant for Triage">
+    <meta property="og:description" content="Offline packet capture triage with structured evidence, reports, artifact extraction, and CTF-friendly workflows.">
+    <meta property="og:image" content="assets/pcat-terminal-preview.png">
+    <link rel="stylesheet" href="assets/site.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="nav" aria-label="Primary navigation">
+        <a class="brand" href="#top" aria-label="PCAT home">
+          <span class="brand-mark" aria-hidden="true">●</span>
+          <span>PCAT</span>
+        </a>
+        <div class="nav-links">
+          <a href="#capabilities">Capabilities</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#quickstart">Quickstart</a>
+          <a href="#docs">Docs</a>
+          <a href="https://github.com/GenTheFrog18/PCAT">GitHub</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-label="PCAT overview">
+        <div class="hero-inner">
+          <div class="hero-copy">
+            <p class="eyebrow">Packet Capture Analysis Tool</p>
+            <h1>PCAP Assistant for Triage</h1>
+            <p>
+              PCAT is an offline CLI for first-pass packet capture analysis. It turns a PCAP into summaries,
+              evidence records, investigation leads, reports, and extracted artifacts that can be handed to
+              Wireshark, TShark, or specialist tools.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#quickstart">Start With The CLI</a>
+              <a class="button button-secondary" href="https://github.com/GenTheFrog18/PCAT/blob/main/docs/reference/PCAT_TECHNICAL_REFERENCE.md">Read Technical Reference</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="status-strip" aria-label="Project status">
+        <div class="status-inner">
+          <div class="stat">
+            <strong>0.2.4.1</strong>
+            <span>Current tool version</span>
+          </div>
+          <div class="stat">
+            <strong>0.2.4</strong>
+            <span>Report schema version</span>
+          </div>
+          <div class="stat">
+            <strong>Offline</strong>
+            <span>No external services required</span>
+          </div>
+          <div class="stat">
+            <strong>TShark</strong>
+            <span>Source of packet truth</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-narrow" id="overview">
+        <p class="section-kicker">What PCAT Is</p>
+        <h2>A briefing and handoff layer for packet captures.</h2>
+        <p class="section-lead">
+          PCAT is not trying to replace Wireshark. It is built for the moment before deep analysis:
+          identify what is inside the capture, surface high-value evidence, explain what is uncertain,
+          and produce commands or files that make the next tool easier to use.
+        </p>
+      </section>
+
+      <section class="section" id="capabilities">
+        <p class="section-kicker">Capabilities</p>
+        <h2>Useful first-pass analysis without hiding uncertainty.</h2>
+        <p class="section-lead">
+          PCAT focuses on repeatable triage output: summaries, evidence, timelines, artifacts, and
+          workflow-friendly exports. Candidate findings stay labeled as candidates.
+        </p>
+
+        <div class="feature-grid">
+          <article class="feature-card">
+            <h3>Capture Summary</h3>
+            <p>Protocol, host, port, DNS, HTTP, TCP stream, and UDP conversation views built from TShark-parsed fields.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Evidence Records</h3>
+            <p>Stable IDs, confidence, previews, frame and stream anchors, and handoff filters for teammate review.</p>
+          </article>
+          <article class="feature-card">
+            <h3>CTF Hunt</h3>
+            <p>Flags, credentials, clue strings, decoded fragments, ICMP payload hints, SYN payloads, and protocol leads.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Artifact Manager</h3>
+            <p>Magic-byte detection with confirmed, candidate, and rejected labels plus validation and skip reasons.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Object Export</h3>
+            <p>Safer carving under `artifacts/`, HTTP object export, and TFTP object export through `pcat extract`.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Structured Reports</h3>
+            <p>HTML, Markdown, TXT, JSON, CSV, evidence JSON, and artifact manifests for repeatable case folders.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section workflow" id="workflow">
+        <div>
+          <p class="section-kicker">Workflow</p>
+          <h2>From unknown capture to next action.</h2>
+          <p class="section-lead">
+            The intended workflow is quick, explicit, and friendly to other tools. PCAT gives a map,
+            not a verdict.
+          </p>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-number">1</div>
+            <div>
+              <h3>Check the environment</h3>
+              <p>Use `pcat doctor` to verify TShark and optional helper tools.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-number">2</div>
+            <div>
+              <h3>Summarize the capture</h3>
+              <p>Run `pcat summary`, `streams`, `dns`, or `http` to establish what traffic exists.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-number">3</div>
+            <div>
+              <h3>Generate evidence</h3>
+              <p>Run `pcat analyze` for the full briefing, stories, findings, reports, and evidence records.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-number">4</div>
+            <div>
+              <h3>Drill down or export</h3>
+              <p>Use `search`, `evidence`, `artifacts`, and `extract` to prepare focused handoff material.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="quickstart">
+        <p class="section-kicker">Quickstart</p>
+        <h2>Install locally and run against a capture.</h2>
+        <p class="section-lead">
+          PCAT is currently developed as a Python package from the repository root.
+        </p>
+        <div class="command-panel" role="img" aria-label="PCAT quickstart commands">
+          <div class="command-panel-header">
+            <span class="dot dot-coral" aria-hidden="true"></span>
+            <span class="dot dot-amber" aria-hidden="true"></span>
+            <span class="dot dot-teal" aria-hidden="true"></span>
+            <span>terminal</span>
+          </div>
+          <pre><code>python3 -m pip install -e .
+pcat doctor
+pcat summary -i capture.pcap
+pcat analyze -i capture.pcap --ctf --extract -o case-output
+pcat evidence -i capture.pcap --top 25 --json
+pcat extract -i capture.pcap --http --tftp -o case-output</code></pre>
+        </div>
+      </section>
+
+      <section class="docs-band" id="docs">
+        <div class="section">
+          <p class="section-kicker">Documentation</p>
+          <h2>Reference material for users, testers, and contributors.</h2>
+          <p class="section-lead">
+            The current docs are maintained as Markdown in the repository so they stay close to the code.
+          </p>
+          <div class="docs-grid">
+            <a class="doc-card" href="https://github.com/GenTheFrog18/PCAT/blob/main/docs/reference/PCAT_MANUAL.md">
+              <div>
+                <h3>Manual</h3>
+                <p>Command-by-command behavior, expected output, and systematic test coverage.</p>
+              </div>
+              <span>Open manual</span>
+            </a>
+            <a class="doc-card" href="https://github.com/GenTheFrog18/PCAT/blob/main/docs/reference/PCAT_TECHNICAL_REFERENCE.md">
+              <div>
+                <h3>Technical Reference</h3>
+                <p>Capabilities, data models, outputs, commands, limits, and planned features.</p>
+              </div>
+              <span>Open reference</span>
+            </a>
+            <a class="doc-card" href="https://github.com/GenTheFrog18/PCAT/blob/main/docs/reference/PCAT_ARCHITECTURE.md">
+              <div>
+                <h3>Architecture</h3>
+                <p>Product philosophy, design decisions, structure, and contribution model.</p>
+              </div>
+              <span>Open architecture</span>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="scope">
+        <p class="section-kicker">Scope</p>
+        <h2>Built for practical triage, with deeper integrations planned later.</h2>
+        <div class="scope-grid">
+          <div class="scope-panel">
+            <h3>Implemented Now</h3>
+            <ul>
+              <li>Offline capture parsing through TShark.</li>
+              <li>Evidence, findings, stories, timelines, and reports.</li>
+              <li>Artifact validation, manifests, HTTP export, and TFTP export.</li>
+              <li>CTF-oriented hunt workflow and JSON output for automation.</li>
+            </ul>
+          </div>
+          <div class="scope-panel">
+            <h3>Planned Later</h3>
+            <ul>
+              <li>Deeper protocol workflows for DNS, HTTP, MQTT, ICMP, and stream reconstruction.</li>
+              <li>External tool integrations such as Zeek and Suricata.</li>
+              <li>Expanded CTF clue normalization after the core workflow is stable.</li>
+              <li>Possible MCP or LLM-facing layer after the analysis core is stronger.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        <span>PCAT - PCAP Assistant for Triage</span>
+        <a href="https://github.com/GenTheFrog18/PCAT">github.com/GenTheFrog18/PCAT</a>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -39,8 +39,8 @@ pcat search -i capture.pcap password --ignore-case
 pcat search -i capture.pcap firmware --scope protocols
 pcat artifacts -i capture.pcap --top 50
 pcat artifacts -i capture.pcap --suspicious --top 20
-pcat tftp -i capture.pcap --export
-pcat extract -i capture.pcap --limit 10
+pcat extract -i capture.pcap --tftp -o case-output
+pcat extract -i capture.pcap --http --limit 10
 ```
 
 Report dan artifact dibuat di `<nama-file-pcap>-pcat/<stem-pcap>/` kecuali user memberi `-o/--out`. Contoh: `capture.pcapng` akan memakai `capture.pcapng-pcat/capture/`. Folder output sudah di-ignore oleh git.
@@ -58,12 +58,12 @@ Setiap command mendukung `--json` untuk automation dan handoff ke tim.
 - Ekstraksi string dari payload TCP/UDP, termasuk Raw IPv4 TCP payload.
 - Mode hunt untuk CTF: flag, flag dengan spasi, credential, clue string, fragment base64 pendek, rekonstruksi berdasarkan timestamp, banner payload ICMP, dan SYN packet yang membawa payload.
 - Triage transfer HTTP memakai metadata request/response, content type, content length, dan indikasi upload/download besar.
-- Bukti SMTP, MQTT, dan TFTP ditampilkan jika field tersedia dari TShark, termasuk evidence credential SMTP AUTH yang sudah di-decode dan grouping/export transfer TFTP.
+- Bukti SMTP, MQTT, dan TFTP ditampilkan jika field tersedia dari TShark, termasuk evidence credential SMTP AUTH yang sudah di-decode dan grouping transfer TFTP. Export object TFTP tersedia lewat `pcat extract --tftp`.
 - Ekstraksi DNS lebih luas untuk answer umum seperti A, AAAA, CNAME, PTR, NS, MX, dan TXT jika field tersedia dari TShark.
 - Timeline memakai timestamp evidence jika tersedia, mengurutkan fallback evidence secara kronologis, dan menampilkan `unknown` daripada membuat waktu palsu `0.000000`.
 - Deteksi artifact berbasis magic-byte dengan label certainty: `confirmed`, `candidate`, atau `rejected`, plus field trust untuk magic header, struktur, kelengkapan file, truncation, source scope, dan alasan skip. Executable PE/MZ ikut dideteksi dan diranking.
-- Artifact manager terkonsolidasi dan membuat `artifacts/manifest.json`; rejected artifact digabung per tipe/alasan di stdout default, sementara offset detail tetap ada di JSON atau verbose output. `files` dan `suspicious` tetap ada sebagai alias kompatibilitas dengan warning deprecation.
-- Ekstraksi lebih aman: `--limit` membatasi file yang benar-benar ditulis, artifact invalid/incomplete tidak dipilih untuk extraction, raw carving harus opt-in, wrapper input `.pcap.gz` tidak dianggap artifact embedded, alasan skip dihitung, dan export HTTP object dilaporkan terpisah dari artifact carving.
+- Artifact manager terkonsolidasi dan membuat `artifacts/manifest.json`; rejected artifact digabung per tipe/alasan di stdout default, sementara offset detail tetap ada di JSON atau verbose output. `files`, `suspicious`, dan `tftp` tetap ada sebagai alias kompatibilitas tersembunyi dengan warning deprecation.
+- Ekstraksi lebih aman: `--limit` membatasi file yang benar-benar ditulis, artifact invalid/incomplete tidak dipilih untuk extraction, raw carving harus opt-in, wrapper input `.pcap.gz` tidak dianggap artifact embedded, alasan skip dihitung, dan export HTTP/TFTP object dilaporkan terpisah dari artifact carving.
 - `search` bisa mencari strings, hasil decode, protocol records, evidence, findings, dan artifacts dengan `--scope`; scope yang berbasis string mendukung `--source raw`, `--source packet`, atau `--source all`.
 - Report JSON memakai `report.json`, `stories.json`, dan `evidence.json`; export CSV mencakup flows, hosts, DNS, HTTP, TFTP, artifacts, dan findings.
 - Command rekomendasi sudah aman untuk path yang mengandung spasi.
@@ -76,6 +76,7 @@ Setiap command mendukung `--json` untuk automation dan handoff ke tim.
 
 ## Dokumentasi
 
+- Source GitHub Pages: [docs/index.html](docs/index.html). Publish dari branch `main` folder `/docs`.
 - [docs/reference/PCAT_ARCHITECTURE.md](docs/reference/PCAT_ARCHITECTURE.md): filosofi produk, arsitektur, keputusan desain, model kontribusi, dan scope implementasi/rencana.
 - [docs/reference/PCAT_TECHNICAL_REFERENCE.md](docs/reference/PCAT_TECHNICAL_REFERENCE.md): referensi teknis lengkap untuk command, data model, output, finding, artifact, dan fitur rencana.
 - [docs/reference/PCAT_MANUAL.md](docs/reference/PCAT_MANUAL.md): manual command lengkap.

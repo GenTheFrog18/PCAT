@@ -581,7 +581,7 @@ Reduce confusing command overlap, make search work across PCAT's evidence model,
 
 Status:
 
-Implemented in schema/tool version `0.2.4`.
+Implemented in schema version `0.2.4` and tool version `0.2.4`; CLI cleanup shipped as tool version `0.2.4.1`.
 
 Primary work:
 
@@ -605,9 +605,9 @@ Primary work:
   - Parse TFTP request/data/error fields from TShark.
   - Build packet-level TFTP records.
   - Group TFTP transfers with filename, direction, client/server, request frame, data frames, byte count, block count, and completeness.
-  - Export complete transferred objects to `<out>/tftp_objects/`.
-  - Allow explicit export of incomplete/unknown transfers with `--include-incomplete`.
-  - Add TFTP evidence, stories, findings, CSV output, hunt output, and `pcat tftp`.
+  - Export complete transferred objects to `<out>/tftp_objects/` through `pcat extract --tftp`.
+  - Allow explicit export of incomplete/unknown transfers with `--include-incomplete-tftp`.
+  - Add TFTP evidence, stories, findings, CSV output, hunt output, and a hidden `pcat tftp` compatibility alias.
 - Add PE/MZ artifact support:
   - Detect PE/MZ signatures.
   - Parse PE section metadata well enough to avoid arbitrary max-size carving when a file end can be inferred.
@@ -625,6 +625,33 @@ Exit criteria:
 - UDP conversations appear in `pcat streams`.
 - TFTP transferred objects can be reassembled/exported with completeness metadata.
 - PE/MZ artifact candidates are detected and ranked.
+
+### V2.4.1: CLI And Help Cleanup
+
+Goal:
+
+Reduce visible command clutter after the V2.4 consolidation without breaking scripts that already use the old command names.
+
+Status:
+
+Implemented in tool version `0.2.4.1`. Report schema remains `0.2.4` because the structured report shape did not change.
+
+Decisions:
+
+- Keep `--help` as the complete public help surface.
+- Add `--help-simple` for workflow-oriented help:
+  - `pcat --help-simple`
+  - `pcat <command> --help-simple`
+  - `pcat --help-simple <command>`
+  - `pcat help-simple <command>`
+- Hide compatibility aliases from normal global help:
+  - `pcat files`
+  - `pcat suspicious`
+  - `pcat tftp`
+- Keep hidden aliases callable with deprecation warnings so older teammate scripts do not break immediately.
+- Move normal TFTP export to `pcat extract --tftp`.
+- Use `pcat evidence --type tftp_transfer --json` for TFTP metadata inspection.
+- Keep incomplete TFTP export as an explicit opt-in with `--include-incomplete-tftp`.
 
 Deferred from the original broad V2.4 idea:
 
@@ -917,7 +944,7 @@ The CLI and structured case folder are the current product. A GUI would add surf
 1. V2.1 intake, parser, DNS, and CLI error fixes.
 2. V2.2 analyst briefing, limitation language, and evidence stories.
 3. V2.3 trust hardening: timeline, artifact completeness, extraction accounting, stdout grouping, search consistency, and noise reduction.
-4. V2.4 command consolidation and TFTP/UDP workflow: implemented in `0.2.4`.
+4. V2.4 command consolidation and TFTP/UDP workflow: implemented in `0.2.4`, with CLI/help cleanup in `0.2.4.1`.
 5. Remaining protocol workflow: DNS ranking, HTTP object/story clarity, MQTT payloads, and ICMP trails.
 6. Case caching and workflow reuse.
 7. Expanded CTF clue normalization after the core workflow is stronger.

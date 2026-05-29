@@ -167,9 +167,9 @@ def tftp_story(report: AnalysisReport) -> list[EvidenceStory]:
     limitations = []
     if incomplete:
         limitations.append("Some TFTP transfers are incomplete, errored, or lack a final short block; exported bytes may need manual validation.")
-    command_parts = ["pcat", "tftp", "-i", report.summary.file, "--json"]
+    command_parts = ["pcat", "evidence", "-i", report.summary.file, "--type", "tftp_transfer", "--json"]
     if complete:
-        command_parts = ["pcat", "tftp", "-i", report.summary.file, "--export"]
+        command_parts = ["pcat", "extract", "-i", report.summary.file, "--tftp"]
     return [EvidenceStory(
         id=stable_id("story", "tftp", len(report.tftp_records), ",".join(item.transfer_id for item in top)),
         kind="tftp_transfer_story",

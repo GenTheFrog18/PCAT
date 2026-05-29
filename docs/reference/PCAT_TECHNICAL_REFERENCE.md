@@ -9,7 +9,7 @@ For architectural goals and design philosophy, see `PCAT_ARCHITECTURE.md`.
 Current PCAT version:
 
 ```text
-0.2.4
+0.2.4.1
 ```
 
 Current report schema version:
@@ -107,7 +107,7 @@ pcat -h analyze
 pcat help analyze
 ```
 
-Every command supports `--json`. For commands that can also write files, `--json` controls terminal output, not whether report files are written.
+Every public command supports `--json`. For commands that can also write files, `--json` controls terminal output, not whether report files are written.
 
 ## Exit Codes
 
@@ -719,22 +719,22 @@ Shows:
 - Top HTTP hosts.
 - HTTP records with frame, stream, method, URI, status, content type, and content length.
 
-### `pcat tftp`
+### TFTP Metadata And Export
 
-Shows TFTP transfer records and optionally exports recoverable objects.
+TFTP transfer metadata is exposed through evidence records, and recoverable TFTP objects are exported through `pcat extract --tftp`. The hidden `pcat tftp` compatibility alias still works for older scripts, but it is not part of the normal public workflow.
 
 ```bash
-pcat tftp -i capture.pcap
-pcat tftp capture.pcap --json
-pcat tftp -i capture.pcap --export -o case-output
+pcat evidence -i capture.pcap --type tftp_transfer --json
+pcat extract -i capture.pcap --tftp -o case-output
+pcat extract -i capture.pcap --tftp --include-incomplete-tftp -o case-output
 ```
 
 Options:
 
-- `--export`: write recoverable TFTP objects under `<out>/tftp_objects/`.
-- `--include-incomplete`: export incomplete or unknown-completeness transfers when bytes are present.
-- `--top N`, `--limit N`: maximum displayed/exported transfers.
-- `-o, --out DIR`: output folder for `--export`.
+- `--tftp`: write complete recoverable TFTP objects under `<out>/tftp_objects/`.
+- `--include-incomplete-tftp`: export incomplete or unknown-completeness transfers when bytes are present.
+- `--top N`, `--limit N`: maximum exported transfers.
+- `-o, --out DIR`: output folder for exports.
 - `--force`: allow writing into an existing output folder.
 
 Shows:
@@ -843,9 +843,9 @@ Options:
 
 Invalid regex patterns return invalid-argument exit code `2`.
 
-### `pcat files`
+### `pcat files` Hidden Compatibility Alias
 
-Deprecated compatibility alias for artifact listing. It keeps the older raw-scan default for scripts; prefer `pcat artifacts`.
+Deprecated compatibility alias for artifact listing. It is hidden from normal help, keeps the older raw-scan default for scripts, and prints a deprecation warning. Prefer `pcat artifacts`.
 
 ```bash
 pcat files -i capture.pcap
@@ -901,12 +901,13 @@ Default stdout groups rejected artifacts by type/reason; JSON keeps individual r
 
 ### `pcat extract`
 
-Extracts/carves detected artifacts.
+Extracts/carves detected artifacts and exports supported protocol objects.
 
 ```bash
 pcat extract -i capture.pcap
 pcat extract -i capture.pcap --include-raw
 pcat extract -i capture.pcap --http
+pcat extract -i capture.pcap --tftp
 pcat extract -i capture.pcap -o extracted-case --force --limit 10
 pcat extract -i capture.pcap --json
 ```
@@ -916,6 +917,8 @@ Options:
 - `-o, --out DIR`: output folder.
 - `--force`: allow writing into existing folder.
 - `--http`: export HTTP objects with TShark when possible.
+- `--tftp`: export complete TFTP transfer objects under `<out>/tftp_objects/`.
+- `--include-incomplete-tftp`: export incomplete or unknown-completeness TFTP transfers when bytes are present.
 - `--include-raw`: include raw PCAP byte carving.
 - `--no-raw`: legacy alias; raw carving is already disabled unless `--include-raw` is set.
 - `--no-payloads`: skip packet payload carving.
@@ -926,16 +929,18 @@ Writes:
 - Extracted files under `<out>/artifacts/`.
 - `<out>/artifacts/manifest.json`.
 - HTTP-exported objects under `<out>/http_objects/` when `--http` is used and TShark exports objects.
+- TFTP-exported objects under `<out>/tftp_objects/` when `--tftp` is used and complete transfer bytes are available.
 
 Reports:
 
 - Found, selected, extracted, unextractable rejected/incomplete, validation-failed, incomplete, missing-source, and raw-disabled counts.
 - HTTP object export count and status separately from artifact carving.
+- TFTP transfer found/exported/skipped counts separately from artifact carving.
 - A `--include-raw` recommendation when useful artifacts were skipped because raw carving is disabled.
 
-### `pcat suspicious`
+### `pcat suspicious` Hidden Compatibility Alias
 
-Deprecated compatibility alias for `pcat artifacts --suspicious`. It keeps the older option names for scripts.
+Deprecated compatibility alias for `pcat artifacts --suspicious`. It is hidden from normal help, keeps the older option names for scripts, and prints a deprecation warning.
 
 ```bash
 pcat suspicious -i capture.pcap
@@ -1220,7 +1225,7 @@ Extracted artifacts may be malicious. Treat extracted files as untrusted.
 
 These are planned or proposed. They should not be described as implemented behavior.
 
-### Future Protocol Work After 0.2.4
+### Future Protocol Work After The V2.4 Baseline
 
 - DNS clustering, ranking, and encoded-label grouping.
 - HTTP stream/object grouping and short-response ranking.

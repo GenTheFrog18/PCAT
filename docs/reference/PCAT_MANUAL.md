@@ -102,18 +102,17 @@ pcat summary     # Quick capture summary
 pcat streams     # Ranked TCP streams and UDP conversations
 pcat dns         # DNS-focused view
 pcat http        # HTTP-focused view
-pcat tftp        # TFTP transfer view/export
 pcat evidence    # Structured V2 evidence records
 pcat timeline    # Chronological findings/evidence view
 pcat strings     # Extract printable strings
 pcat search      # Search strings, decoded values, protocols, evidence, findings, and artifacts
-pcat files       # Deprecated alias for artifact detection
 pcat artifacts   # Artifact manager view
-pcat extract     # Carve/extract detected artifacts
-pcat suspicious  # Deprecated alias for suspicious artifact ranking
+pcat extract     # Carve artifacts and export HTTP/TFTP objects
 pcat hunt        # CTF-oriented automatic hunt
 pcat doctor      # Dependency and environment check
 ```
+
+Hidden compatibility aliases remain callable for older scripts: `pcat files`, `pcat suspicious`, and `pcat tftp`. They are intentionally not part of the normal help workflow.
 
 Help is available globally and per command:
 
@@ -122,6 +121,8 @@ pcat -h
 pcat analyze -h
 pcat -h analyze
 pcat help analyze
+pcat --help-simple
+pcat extract --help-simple
 ```
 
 ## `pcat analyze`
@@ -351,24 +352,24 @@ Things to test:
 - PCAP with file downloads.
 - PCAP with no HTTP.
 
-## `pcat tftp`
+## TFTP Workflow
 
-Shows TFTP request/data/error packets grouped into file-transfer records. This is useful for firmware, boot image, config, and CTF captures that move data over UDP instead of TCP streams.
+TFTP is handled through the evidence and extraction commands instead of a dedicated public mode. This keeps protocol object export together with other extraction workflows.
 
 ```bash
-pcat tftp -i capture.pcap
-pcat tftp -i capture.pcap --json
-pcat tftp -i capture.pcap --export -o case-output
+pcat evidence -i capture.pcap --type tftp_transfer --json
+pcat extract -i capture.pcap --tftp -o case-output
+pcat extract -i capture.pcap --tftp --include-incomplete-tftp -o case-output
 ```
 
-Useful options:
+Useful options on `pcat extract`:
 
-- `--export`: write recoverable TFTP objects to `<out>/tftp_objects/`.
-- `--include-incomplete`: export transfers with bytes even when completeness is `unknown`, `incomplete`, or `error`.
-- `--top N`, `--limit N`: display/export limit, default `50`.
-- `-o, --out PATH`: output folder used with `--export`.
+- `--tftp`: write recoverable complete TFTP objects to `<out>/tftp_objects/`.
+- `--include-incomplete-tftp`: export transfers with bytes even when completeness is `unknown`, `incomplete`, or `error`.
+- `--limit N`, `--top N`: artifact and TFTP export limit, default `50`.
+- `-o, --out PATH`: output folder.
 - `--force`: allow existing output folder.
-- `--json`: emit packet records, transfer records, and export summary.
+- `--json`: emit extraction metadata, including the TFTP export summary.
 
 Expected output:
 
@@ -380,14 +381,14 @@ Expected output:
 - Block count.
 - Byte count.
 - Completeness: `complete`, `unknown`, `incomplete`, `metadata_only`, or `error`.
-- Export path and SHA256 when `--export` writes a file.
+- Export path and SHA256 when `extract --tftp` writes a file.
 
 Things to test:
 
 - TFTP read request with a complete transfer.
 - TFTP transfer where data is present but no final short block is visible.
 - TFTP error packet.
-- `--export` with and without `--include-incomplete`.
+- `extract --tftp` with and without `--include-incomplete-tftp`.
 
 ## `pcat evidence`
 
@@ -515,7 +516,7 @@ Things to test:
 
 ## `pcat files`
 
-Deprecated compatibility alias for artifact listing. It detects embedded file signatures using magic bytes and keeps the older raw-scan default, but new workflows should use `pcat artifacts`.
+Hidden deprecated compatibility alias for artifact listing. It detects embedded file signatures using magic bytes and keeps the older raw-scan default for scripts, but new workflows should use `pcat artifacts`.
 
 ```bash
 pcat files -i capture.pcap
@@ -587,10 +588,11 @@ Useful options:
 
 ## `pcat extract`
 
-Carves detected artifacts into an output folder.
+Carves detected artifacts and exports supported protocol objects into an output folder.
 
 ```bash
 pcat extract -i capture.pcap
+pcat extract -i capture.pcap --http --tftp -o case-output
 ```
 
 Useful options:
@@ -598,6 +600,8 @@ Useful options:
 - `-o, --out PATH`: output folder.
 - `--force`: allow existing output folder.
 - `--http`: export HTTP objects with `tshark` when possible.
+- `--tftp`: export complete TFTP transfer objects to `<out>/tftp_objects/`.
+- `--include-incomplete-tftp`: export incomplete or unknown-completeness TFTP transfers when bytes are available.
 - `--include-raw`: include raw PCAP byte carving. This is disabled by default.
 - `--no-raw`: legacy alias; raw carving is already disabled unless `--include-raw` is used.
 - `--no-payloads`: skip payload carving.
@@ -610,6 +614,7 @@ Expected output folder:
 <out>/artifacts/
 <out>/artifacts/manifest.json
 <out>/http_objects/        # only when --http exports objects
+<out>/tftp_objects/        # only when --tftp exports objects
 ```
 
 Expected metadata:
@@ -619,6 +624,7 @@ Expected metadata:
 - Unextractable rejected/incomplete hit counts.
 - Counts for skipped raw-disabled, validation-failed, incomplete, and missing-source artifacts.
 - HTTP object export count/status when `--http` is used.
+- TFTP transfer found/exported/skipped counts when `--tftp` is used.
 - Extracted path.
 - SHA256 hash.
 - Certainty label.
@@ -632,10 +638,11 @@ Things to test:
 - Existing output folder without `--force`.
 - Existing output folder with `--force`.
 - `--http` on HTTP PCAP.
+- `--tftp` on TFTP PCAP.
 
 ## `pcat suspicious`
 
-Deprecated compatibility alias for `pcat artifacts --suspicious`. It ranks detected artifact/file signatures by investigation value and keeps the older option names for scripts.
+Hidden deprecated compatibility alias for `pcat artifacts --suspicious`. It ranks detected artifact/file signatures by investigation value and keeps the older option names for scripts, but new workflows should use `pcat artifacts --suspicious`.
 
 ```bash
 pcat suspicious -i capture.pcap
@@ -741,7 +748,7 @@ Use different PCAPs if available:
 | HTTP POST | `http`, `analyze` | HTTP POST finding |
 | SMTP email | `hunt`, `search` | Email clues, URLs, or password-like lines appear |
 | MQTT traffic | `hunt`, `analyze` | MQTT topics/messages appear |
-| TFTP transfer | `tftp`, `streams`, `hunt`, `analyze` | TFTP transfer metadata appears; export writes recoverable complete objects |
+| TFTP transfer | `evidence --type tftp_transfer`, `extract --tftp`, `streams`, `hunt`, `analyze` | TFTP transfer metadata appears; export writes recoverable complete objects |
 | SYN payloads | `hunt`, `analyze` | SYN payload candidate appears |
 | Port scan | `analyze` | Scan/recon finding |
 | CTF flag | `strings`, `search`, `hunt` | Flag-like string appears |
@@ -769,7 +776,8 @@ pcat strings -i sample.pcap --grep flag --ignore-case
 pcat search -i sample.pcap password --ignore-case
 pcat artifacts -i sample.pcap
 pcat artifacts -i sample.pcap --suspicious
-pcat tftp -i sample.pcap
+pcat evidence -i sample.pcap --type tftp_transfer --json
+pcat extract -i sample.pcap --tftp -o sample-output
 pcat hunt -i sample.pcap
 pcat analyze -i sample.pcap --ctf --extract -f html,json,csv,md,txt
 ```
