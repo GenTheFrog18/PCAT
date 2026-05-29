@@ -1,18 +1,29 @@
 # PCAT Roadmap And Decision Record
 
-Date: 2026-05-22
+Date: 2026-05-30
 
-This document records the current product decisions and roadmap after the first V2 test cycle. It is intentionally separate from the GitHub-facing technical docs because it includes planning context, testing interpretation, and future decisions.
+This document records the current product decisions and roadmap after the first V2 prototype/report cycle. It is intentionally separate from the GitHub-facing technical docs because it includes planning context, testing interpretation, and future decisions.
 
 ## Current Situation
 
-PCAT V2 has been pushed as a prototype/testing build. The first testing round shows that the core foundation is viable:
+PCAT V2 has been consolidated through tool version `0.2.4.1` and report schema version `0.2.4`. The first prototype report has been submitted, and the current repository now has a stronger README, reference documentation, and a GitHub Pages source under `docs/`.
+
+Completed baseline:
+
+- V2.1 fixed intake, parser, DNS, and CLI error reliability issues.
+- V2.2 added analyst briefing, evidence stories, and clearer limitation language.
+- V2.3 and V2.3.1 hardened timeline behavior, artifact certainty, extraction accounting, stdout grouping, and trust language.
+- V2.4 consolidated artifact-facing commands, expanded evidence search, added UDP conversation visibility, added PE/MZ artifact support, and added TFTP grouping/export.
+- V2.4.1 cleaned up the CLI/help surface, moved normal TFTP export under `pcat extract --tftp`, hid old compatibility aliases, and added `--help-short`.
+
+The testing cycle shows that the core foundation is viable:
 
 - Supported `.pcap` and `.pcapng` captures did not produce blocker/high reliability failures.
 - Full reports, JSON, CSV files, evidence records, and artifact manifests are generated.
 - Extraction limits are respected.
 - Artifact extraction is bounded and does not execute files.
 - Evidence-first architecture is still the right foundation.
+- Public-facing documentation is good enough for teammate/mentor review, but the GitHub Pages visual design still needs a separate pass before it should be treated as the project's polished public face.
 
 The main weakness is not basic stability. The main weakness is that PCAT often produces facts without enough analyst judgment.
 
@@ -21,7 +32,7 @@ In practical terms:
 - PCAT can say what it found.
 - PCAT is not yet consistently good at saying what matters first, why it matters, what it cannot see, and what command the analyst should run next.
 
-The next phase should therefore focus on reliability, triage judgment, grouping, and user trust before external integrations.
+The next phase should therefore focus on post-prototype bug reports, documentation/release hygiene, remaining protocol workflow, and user trust before external integrations.
 
 ## Latest CTF-Oriented Test Read
 
@@ -261,8 +272,25 @@ Those features are valuable and came directly from testing, but they add new pro
 Impact:
 
 - V2.4 is renamed from generic protocol views to protocol views and reassembly.
-- TFTP and MQTT are promoted into the V2.4 plan.
+- TFTP is promoted into the V2.4 plan; MQTT remains in the next protocol workflow milestone.
 - V2.3 prepares the metadata fields and output language that V2.4 protocol exporters will reuse.
+
+### Decision 11: Public Project Material Should Stay Truthful To The Prototype
+
+Decision:
+
+The README, reference docs, and future GitHub Pages site should present PCAT as an active offline triage prototype, not as a finished security platform.
+
+Reason:
+
+After the prototype report, the project needs to be understandable to teammates, mentors, and testers. That does not mean the project needs marketing polish or broad claims. Overstating maturity would create the same trust problem the tool is designed to avoid.
+
+Impact:
+
+- The main README is the primary public project surface for now.
+- GitHub Pages can exist as a deployment target, but its visual design should be revisited before being treated as final.
+- Documentation should keep implemented behavior, known limits, and planned features separate.
+- The roadmap should explicitly record documentation, release hygiene, and public presentation work instead of treating it as unrelated housekeeping.
 
 ## Roadmap Overview
 
@@ -661,7 +689,317 @@ Deferred from the original broad V2.4 idea:
 - ICMP trail summaries beyond existing ICMP payload/banner findings.
 - Full TCP stream reassembly.
 
-### V2.5: Case Cache And Workflow Reuse
+### V2.4.2: Post-Prototype Repo And Release Hygiene
+
+Goal:
+
+Make the repository easier to review, test, and hand off after the prototype report without changing the analysis model.
+
+Status:
+
+Partially implemented. The main README has been rewritten as a project-facing document, the documentation index has GitHub Pages publishing notes, and a first GitHub Pages source exists. The page design itself is not considered final.
+
+Primary work:
+
+- Keep the README as the most reliable public entry point.
+- Keep English and Indonesian overview docs reasonably aligned.
+- Add or decide on a project license before encouraging broader reuse.
+- Add package metadata that helps repository viewers and future package users:
+  - project URLs
+  - classifiers
+  - license metadata after a license is chosen
+- Add a lightweight changelog or release notes file before tagging public milestones.
+- Revisit the GitHub Pages design:
+  - avoid visual overlap and oversized screenshot composition
+  - keep the first viewport focused on PCAT's actual purpose
+  - link to the manual, technical reference, and architecture docs
+- Add issue/report templates only if tester feedback becomes hard to track informally.
+
+Why this matters:
+
+The project has moved from private prototype work into teammate and mentor review. The repository should explain the tool accurately before larger features or integrations make the surface area harder to understand.
+
+Exit criteria:
+
+- README explains purpose, install, quickstart, output structure, limits, docs, and contribution expectations.
+- Docs clearly mark implemented, planned, and known-limitation behavior.
+- GitHub Pages can be enabled from `/docs` without misleading users.
+- License status is explicit.
+- Release notes summarize the current prototype build.
+
+### V2.5: Remaining Protocol Workflow
+
+Goal:
+
+Make the most common protocol-specific follow-up paths more useful without turning PCAT into a full reassembly engine.
+
+Research basis:
+
+The V2.5 plan is based on tester feedback plus public protocol-analysis workflows, tutorials, forum questions, and PCAP writeups. The recurring theme is that analysts do not only need more decoded fields. They need grouped protocol stories, extraction confidence, and precise handoff commands.
+
+Research signals:
+
+- General PCAP triage workflows commonly start with protocol/host/conversation summaries, then move into targeted TShark field extraction and object export. This matches PCAT's role as a fast briefing layer before deeper Wireshark/TShark work. Reference: [PCAP Analysis with Wireshark and Tshark](https://www.amirootyet.com/post/pcap-analysis-with-wireshark-tshark/).
+- HTTP investigations often involve unencrypted malware downloads, fake login pages, email objects, FTP/SMB object extraction, misleading content types, and manual object export from Wireshark. Reference: [Unit 42 Wireshark Tutorial: Exporting Objects From a Pcap](https://unit42.paloaltonetworks.com/using-wireshark-exporting-objects-from-a-pcap/).
+- Forum questions around HTTP export frequently come from users seeing requests but getting no exportable object, missing reassembly settings, chunked responses, partial captures, or TLS-encrypted payloads. PCAT should explain these failure modes instead of only saying "0 exported." Example forum signals: [Export Objects HTTP returns nothing](https://www.reddit.com/r/wireshark/comments/l1bvvm), [HTTP chunks/image extraction confusion](https://www.reddit.com/r/wireshark/comments/kcdzhm).
+- DNS analysis cases often depend on grouping related questions, failed answers, query types, long labels, encoded-looking labels, TXT data, and suspicious base domains. References: [PacketSafari DNS case studies](https://www.packetsafari.com/blog/2022/02/23/analyzing-dns-in-wireshark/) and [Infoblox DNS tunneling tool analysis](https://www.infoblox.com/blog/community/analysis-on-popular-dns-tunneling-tools/).
+- DNS tunneling examples frequently use high-volume labels, TXT records, and base64-like text in queries/responses. PCAT should flag these as leads and preserve exact labels for manual decoding, not claim decoded content unless decoding is successful and reversible. Forum signal: [DNS encoding/exfiltration confusion](https://www.reddit.com/r/wireshark/comments/xrb64g).
+- MQTT workflows need topic, client ID, CONNECT, SUBSCRIBE, PUBLISH, QoS, retain, keepalive, username/password presence, payload preview, and TLS limitation handling. References: [EMQX MQTT Wireshark guide](https://www.emqx.com/en/blog/mastering-mqtt-analysis-with-wireshark), [Cedalo MQTT Wireshark guide](https://cedalo.com/blog/wireshark-mqtt-guide/), and [SCADA Protocols MQTT traffic guide](https://scadaprotocols.com/wireshark-mqtt-industrial-iot-guide/).
+- ICMP is not only connectivity noise. Real investigations and training material treat payload size, frequency, destinations, and embedded payload data as possible exfiltration or C2 clues. Reference: [IMP Solutions ICMP exfiltration discussion](https://www.impsolutions.com/insights/subtle-data-exfilltration).
+- USB/HID captures show up in CTF and forensics workflows where the first useful action is to identify that the capture is USB/HID, extract `usb.capdata` or `usbhid.data`, and hand off to a keyboard/mouse parser or script. References: [HackTricks USB keystrokes](https://book.hacktricks.wiki/generic-methodologies-and-resources/basic-forensic-methodology/pcap-inspection/usb-keystrokes.html), [Dissecting USB PCAP Traffic](https://05t3.github.io/posts/Dissecting-USB-Traffic/), and [OtterCTF USB tablet writeup](https://www.petermstewart.net/otterctf-2018-network-challenges-look-at-me-write-up/).
+
+Primary work:
+
+#### DNS Workflow
+
+Problem:
+
+DNS is useful both for normal triage and for CTF/exfiltration cases, but raw DNS rows are not enough. Analysts need to know which query groups are unusual, which base domains dominate, which labels look encoded, and whether parser limitations hide useful details.
+
+Planned output:
+
+- `pcat dns` remains the human DNS view, but gains grouped sections:
+  - top queried names
+  - top base domains
+  - repeated NXDOMAIN/failure groups
+  - unusual query types such as TXT, NULL, long CNAME chains, and uncommon record types
+  - long-label and high-entropy-label candidates
+  - encoded-looking label candidates
+  - high-volume client-to-domain pairs
+- JSON output includes `dns_groups`, not only flat `dns_records`.
+- Findings/stories explain why a DNS group matters and what filter to run next.
+
+Planned evidence additions:
+
+- `dns_query_group`
+- `dns_encoded_label_candidate`
+- `dns_tunnel_candidate`
+- `dns_failure_pattern`
+- `dns_txt_payload_candidate`
+
+Important constraints:
+
+- Do not call an encoded-looking label decoded unless PCAT actually decodes it.
+- Keep raw labels and decoded attempts side by side.
+- Report entropy/length as signals, not proof.
+- Do not let DNS tunnel candidates dominate `hunt` unless the confidence is high or the user asks for verbose output.
+
+Example next-step commands:
+
+```bash
+pcat dns -i capture.pcap --json
+pcat search -i capture.pcap suspicious-domain.example --scope protocols
+tshark -r capture.pcap -Y "dns" -T fields -e frame.number -e ip.src -e dns.qry.name -e dns.qry.type
+```
+
+#### HTTP Workflow
+
+Problem:
+
+HTTP workflows often revolve around objects, uploads, redirects, credentials, user agents, suspicious paths, and extraction failure. Users are confused when HTTP requests exist but `Export Objects` or `extract --http` writes nothing.
+
+Planned output:
+
+- `pcat http` gains transfer grouping:
+  - request/response pairs where frame/stream data is available
+  - download-looking responses
+  - upload-looking requests
+  - large transfers
+  - suspicious extensions and paths
+  - content-type versus filename mismatch
+  - user-agent grouping
+  - host/path/status summaries
+- `pcat extract --http` keeps object-export accounting separate from artifact carving and explains common failure states:
+  - no HTTP objects found
+  - encrypted/TLS traffic
+  - partial capture or missing response body
+  - unsupported transfer/reassembly condition
+  - TShark export failure
+- JSON includes an HTTP export detail table with frame/stream/source hints when TShark provides enough data.
+
+Planned evidence additions:
+
+- `http_transfer_group`
+- `http_download_candidate`
+- `http_upload_candidate`
+- `http_content_type_mismatch`
+- `http_export_failure_reason`
+- `http_suspicious_path`
+
+Important constraints:
+
+- Exported HTTP objects are not automatically safe.
+- Content type from the server is metadata, not proof of file type.
+- If export writes files, stdout must not summarize the run as only "Artifacts extracted: 0."
+- If export writes nothing, PCAT should point to likely reasons and next filters.
+
+Example next-step commands:
+
+```bash
+pcat http -i capture.pcap --json
+pcat extract -i capture.pcap --http -o case-output
+tshark -r capture.pcap --export-object http,case-output/http_objects
+tshark -r capture.pcap -Y "http.request or http.response" -T fields -e frame.number -e tcp.stream -e http.host -e http.request.uri -e http.response.code -e http.content_type
+```
+
+#### MQTT Workflow
+
+Problem:
+
+MQTT appears in IoT and industrial captures, and the useful evidence is usually not "MQTT exists." Analysts need client IDs, broker endpoints, CONNECT metadata, subscriptions, publish topics, QoS/retain behavior, payload previews, and whether traffic is encrypted on MQTT-over-TLS.
+
+Planned output:
+
+- Add or expand an MQTT-focused view:
+  - broker endpoints
+  - client IDs
+  - CONNECT/SUBSCRIBE/PUBLISH/DISCONNECT counts
+  - topics by frequency
+  - publish payload previews when available
+  - username/password presence and decoded values only when TShark exposes plaintext fields
+  - QoS and retain flags
+  - keepalive/session hints
+  - MQTT-over-TLS limitation when only port/protocol metadata is visible
+- `hunt` should surface high-signal MQTT leads without dumping every topic.
+- JSON includes topic groups and message samples with frame anchors.
+
+Planned evidence additions:
+
+- `mqtt_client`
+- `mqtt_topic_group`
+- `mqtt_publish_sample`
+- `mqtt_subscription`
+- `mqtt_credential_observation`
+- `mqtt_tls_limited_visibility`
+
+Important constraints:
+
+- Do not export binary MQTT payloads until source/completeness semantics are clear.
+- Payload previews must be bounded and clearly truncated.
+- Plaintext credentials should be marked sensitive but not redacted by default.
+- Encrypted MQTT should produce metadata and limitation language, not empty silence.
+
+Example next-step commands:
+
+```bash
+pcat search -i capture.pcap mqtt --scope protocols
+pcat evidence -i capture.pcap --type mqtt_message --json
+tshark -r capture.pcap -Y "mqtt" -T fields -e frame.number -e ip.src -e ip.dst -e mqtt.topic -e mqtt.msgtype -e mqtt.qos
+```
+
+#### ICMP Workflow
+
+Problem:
+
+ICMP can be normal diagnostics, but payload-bearing ICMP can also indicate covert channels, C2, exfiltration, or CTF clues. A flat packet list does not show whether there is a trail.
+
+Planned output:
+
+- Group ICMP activity by endpoint pair and type/code.
+- Highlight payload-bearing echo requests/replies.
+- Report payload size distribution and unusual repeated payload patterns.
+- Detect printable, hex-looking, base64-looking, or protocol-banner-like payloads as candidates.
+- Produce a compact ICMP trail story when multiple related payload packets exist.
+
+Planned evidence additions:
+
+- `icmp_endpoint_group`
+- `icmp_payload_candidate`
+- `icmp_payload_trail`
+- `icmp_large_payload`
+- `icmp_repeated_payload_pattern`
+
+Important constraints:
+
+- ICMP payload does not automatically mean malicious.
+- Size/frequency/payload signals should be framed as leads.
+- Reconstructed payloads should remain candidate data unless completeness is clear.
+
+Example next-step commands:
+
+```bash
+pcat hunt -i capture.pcap --json
+pcat evidence -i capture.pcap --type icmp_payload --json
+tshark -r capture.pcap -Y "icmp and data" -T fields -e frame.number -e ip.src -e ip.dst -e data.len -e data.data
+```
+
+#### USB/HID And Unusual Capture Handoff
+
+Problem:
+
+Some PCAPs are not normal IP network captures. CTF and forensics cases may contain USB keyboard, mouse, tablet, Bluetooth, or mixed encapsulation traffic. PCAT should recognize these cases and give a precise handoff rather than producing weak network-centric output.
+
+Planned output:
+
+- Detect likely USB/HID captures from link type, protocol hierarchy, or TShark fields.
+- Summarize:
+  - USB device addresses
+  - transfer types
+  - presence of `usb.capdata`
+  - presence of `usbhid.data`
+  - keyboard-like 8-byte reports
+  - mouse/tablet-like movement reports
+- Provide handoff commands to extract HID fields.
+- Do not attempt full keyboard/mouse reconstruction in this milestone unless the implementation can do it robustly across captured field variants.
+
+Planned evidence additions:
+
+- `usb_hid_capture`
+- `usb_hid_keyboard_candidate`
+- `usb_hid_pointer_candidate`
+- `unsupported_capture_handoff`
+
+Important constraints:
+
+- USB/HID decoding is layout- and descriptor-sensitive.
+- If report descriptors are missing, PCAT should say so.
+- Treat decoded keystrokes, if added later, as sensitive output.
+
+Example next-step commands:
+
+```bash
+tshark -r capture.pcapng -Y "usbhid.data or usb.capdata" -T fields -e frame.number -e usb.device_address -e usbhid.data -e usb.capdata
+```
+
+#### Encrypted And Mixed Traffic Handoff
+
+Problem:
+
+QUIC/TLS-heavy captures can look empty to beginners because payloads are encrypted. PCAT should explain what metadata remains useful.
+
+Planned output:
+
+- Identify TLS/QUIC-heavy captures.
+- Summarize visible metadata:
+  - SNI where available
+  - ALPN where available
+  - certificate subject/issuer where available
+  - TLS versions/ciphers where available
+  - UDP/443 QUIC endpoints
+  - DNS correlation before encrypted connections
+- Explain that payload extraction is not possible without keys or decrypted traffic.
+
+Planned evidence additions:
+
+- `encrypted_traffic_summary`
+- `tls_metadata_group`
+- `quic_metadata_group`
+- `decryption_required_limitation`
+
+Why this matters:
+
+The prototype proved that PCAT is useful when it groups evidence into concrete next actions. Remaining protocol work should make common follow-up paths easier, not just add more rows.
+
+Exit criteria:
+
+- Protocol views produce a concise human answer and a JSON handoff.
+- New protocol findings preserve confidence and limitations.
+- `hunt` remains concise.
+- New behavior has tests or documented limitations.
+- Each workflow has at least one fixture or golden-output test.
+- Empty states explain what was checked and why nothing actionable was found.
+
+### V2.6: Case Cache And Workflow Reuse
 
 Goal:
 
@@ -692,6 +1030,325 @@ Exit criteria:
 - Repeated common views can reuse prior analysis output.
 - Cache invalidates safely when schema changes.
 - Commands still work without cache.
+
+### V2.7: AI/LLM Integration Readiness Without AI Integration
+
+Goal:
+
+Make PCAT's JSON output, case folders, command output, evidence structure, and documentation useful for teammates who want to integrate their own LLM or assistant layer later, without adding any AI model, AI API, prompt execution, or MCP server inside PCAT.
+
+Non-goal:
+
+V2.7 does not add AI summarization, LLM calls, cloud upload, chat UI, or automatic natural-language conclusions. PCAT remains the deterministic evidence producer. Any future AI layer must consume PCAT output and cite PCAT evidence.
+
+Why this matters:
+
+If an LLM integration is added by another teammate, it will only be useful if PCAT's output is stable, parseable, bounded, provenance-rich, and explicit about uncertainty. Otherwise the LLM layer will be forced to scrape terminal text or infer meaning from inconsistent JSON shapes, which creates brittle integrations and overconfident summaries.
+
+Design principles:
+
+- Model-agnostic: no OpenAI-specific, Anthropic-specific, local-model-specific, or MCP-specific assumptions in the core output.
+- Local-first: PCAT should not send captures, reports, artifacts, or evidence to external services.
+- Schema-first: JSON outputs should have documented contracts and versioning.
+- Deterministic: the same capture and options should produce stable IDs and stable ordering where possible.
+- Evidence-grounded: every summary, finding, story, recommendation, and extracted artifact should point back to frames, streams, evidence IDs, artifact IDs, or output files.
+- Bounded context: large strings, payloads, and artifact previews must be bounded with explicit truncation metadata.
+- No silent redaction by default: PCAT should preserve evidence by default, but mark sensitive fields so downstream tools can decide how to handle them.
+- Human and machine parity: anything important printed in terminal output should be available in JSON.
+
+Primary work:
+
+#### JSON Envelope Standardization
+
+Problem:
+
+Different commands currently return different JSON shapes. That is acceptable for humans calling one command at a time, but brittle for downstream parsers and AI integrations.
+
+Planned standard envelope for every `--json` command:
+
+```json
+{
+  "schema_version": "0.2.x",
+  "pcat_version": "0.2.x",
+  "command": {
+    "name": "analyze",
+    "argv": ["pcat", "analyze", "-i", "capture.pcap"],
+    "mode": "ctf"
+  },
+  "input": {
+    "path": "capture.pcap",
+    "sha256": "...",
+    "size_bytes": 0
+  },
+  "case": {
+    "case_id": "...",
+    "output_dir": "..."
+  },
+  "generated_at": "...",
+  "warnings": [],
+  "limits": {
+    "truncated": false,
+    "max_items": null,
+    "max_preview_bytes": null
+  },
+  "data": {}
+}
+```
+
+Rules:
+
+- `schema_version` describes the JSON contract.
+- `pcat_version` describes the tool build.
+- `data` contains the command-specific payload.
+- Errors in JSON mode should be machine-readable when possible and still respect exit codes.
+- Human progress logs must not pollute stdout when `--json` is used.
+
+#### JSON Schema Files
+
+Problem:
+
+Downstream integrators need to know what fields exist, which fields are optional, and which fields are stable.
+
+Planned work:
+
+- Add JSON Schema documents under `docs/schema/` or `schemas/`.
+- Cover at least:
+  - command envelope
+  - `AnalysisReport`
+  - `EvidenceRecord`
+  - `EvidenceStory`
+  - `Finding`
+  - `ArtifactRecord`
+  - extraction summary
+  - protocol workflow summaries
+  - recommended command objects
+- Add schema version history and compatibility rules.
+- Add tests that validate generated fixture outputs against schemas.
+
+#### Stable Evidence Graph
+
+Problem:
+
+LLM/assistant layers need references they can cite. Flat text summaries are not enough.
+
+Planned work:
+
+- Strengthen relationships between:
+  - capture
+  - packets/frames
+  - flows/streams/conversations
+  - evidence records
+  - findings
+  - stories
+  - artifacts
+  - extracted files
+  - recommended commands
+- Add explicit relationship fields where missing:
+  - `related_evidence_ids`
+  - `related_artifact_ids`
+  - `related_flow_ids`
+  - `related_stream_ids`
+  - `frame_refs`
+  - `source_refs`
+- Keep IDs stable across repeated runs on the same capture where possible.
+- Document which IDs are stable and which are best-effort.
+
+#### Assistant-Handoff Bundle
+
+Problem:
+
+An LLM integrator should not need to call five commands and guess which outputs matter.
+
+Planned work:
+
+- Add a deterministic handoff bundle, not an AI feature.
+- Possible command:
+
+```bash
+pcat handoff -i capture.pcap -o case-output --json
+```
+
+- Possible output file:
+
+```text
+case-output/
+  handoff.json
+```
+
+Proposed `handoff.json` content:
+
+- capture identity and limitations
+- briefing
+- top stories
+- top findings
+- evidence index summary
+- artifact summary
+- protocol workflow summaries
+- recommended commands as structured argv arrays
+- sensitive-field inventory
+- truncation and omission notes
+- links to full JSON files in the case folder
+
+Important naming note:
+
+Prefer `handoff.json` or `assistant_handoff.json` over `llm.json`. The file should be useful for humans, scripts, MCP servers, local agents, or LLM wrappers without implying PCAT itself is an AI tool.
+
+#### Structured Recommended Commands
+
+Problem:
+
+PCAT currently emits copy-paste commands as strings in several places. Strings are good for humans but awkward for tool integrations.
+
+Planned command object:
+
+```json
+{
+  "command_id": "cmd:extract:tftp",
+  "tool": "pcat",
+  "argv": ["pcat", "extract", "-i", "capture.pcap", "--tftp", "-o", "case-output"],
+  "purpose": "Export recoverable TFTP objects",
+  "risk": "writes_files",
+  "requires_confirmation": true,
+  "related_evidence_ids": ["..."],
+  "expected_outputs": ["case-output/tftp_objects/"]
+}
+```
+
+Rules:
+
+- Always include `argv` arrays in JSON.
+- Keep display strings optional.
+- Mark write/export/destructive potential explicitly.
+- No recommended command should require shell parsing to understand.
+
+#### Sensitivity And Safety Labels
+
+Problem:
+
+PCAPs often contain passwords, cookies, private URLs, internal hostnames, CTF flags, emails, and file contents. V2.7 should help downstream tools handle this responsibly without redacting by default.
+
+Planned labels:
+
+- `contains_credentials`
+- `contains_cookie`
+- `contains_token`
+- `contains_private_url`
+- `contains_internal_hostname`
+- `contains_payload_bytes`
+- `contains_extracted_file`
+- `contains_ctf_flag_candidate`
+- `malware_risk`
+
+Rules:
+
+- Labels are metadata, not redaction.
+- Redaction remains explicit opt-in if implemented later.
+- Terminal and JSON docs must warn that downstream AI integrations can leak sensitive data if they send PCAT output to external services.
+
+#### Bounded Previews And Truncation Metadata
+
+Problem:
+
+LLM integrations fail or hallucinate when huge payloads are dumped into context without boundaries.
+
+Planned work:
+
+- Standardize preview fields:
+  - `preview`
+  - `preview_encoding`
+  - `preview_bytes`
+  - `preview_truncated`
+  - `full_data_available`
+  - `full_data_path`
+- Use bounded previews for strings, payloads, MQTT messages, ICMP payloads, DNS decoded candidates, and artifact bytes.
+- Never hide truncation.
+
+#### NDJSON Or Pagination For Large Outputs
+
+Problem:
+
+Large captures can produce large evidence arrays that are inefficient for streaming or external processing.
+
+Planned work:
+
+- Consider optional NDJSON outputs for evidence-heavy commands:
+
+```bash
+pcat evidence -i capture.pcap --jsonl
+pcat search -i capture.pcap keyword --jsonl
+```
+
+- Or provide pagination/limit metadata:
+  - `total_count`
+  - `returned_count`
+  - `offset`
+  - `limit`
+  - `has_more`
+- Keep regular `--json` behavior for normal use.
+
+#### Error And Exit Contract
+
+Problem:
+
+Downstream tools need reliable failure handling.
+
+Planned work:
+
+- Document all exit codes in a machine-readable table.
+- In JSON mode, provide structured error output when possible:
+
+```json
+{
+  "error": {
+    "exit_code": 2,
+    "category": "invalid_argument",
+    "message": "Invalid regex pattern",
+    "detail": "..."
+  }
+}
+```
+
+- Keep traceback output behind `--debug`.
+- Keep stderr for human diagnostics; keep stdout parseable when `--json` is requested.
+
+#### Integration Documentation
+
+Problem:
+
+If teammates integrate LLMs, they need a contract and examples, not informal assumptions.
+
+Planned docs:
+
+- `docs/reference/PCAT_JSON_CONTRACT.md`
+- `docs/reference/PCAT_ASSISTANT_HANDOFF.md`
+- Example parser snippets:
+  - Python
+  - JavaScript/TypeScript if useful
+- Example "safe integration rules":
+  - cite evidence IDs
+  - do not claim unsupported decoding
+  - do not send sensitive output to external APIs without explicit user approval
+  - prefer `handoff.json` before full `report.json`
+  - ask PCAT for more evidence instead of guessing
+
+Testing requirements:
+
+- Golden JSON outputs for representative commands.
+- Schema validation in tests.
+- Deterministic ordering tests for top-level evidence/story/finding outputs.
+- Tests that `--json` stdout contains only JSON.
+- Tests for structured errors in JSON mode.
+- Tests for recommended command `argv` arrays.
+- Tests for sensitivity labels on credentials, cookies, tokens, payload bytes, and extracted artifacts.
+
+Exit criteria:
+
+- A teammate can write an LLM wrapper using documented JSON files without scraping terminal output.
+- The wrapper can cite evidence IDs and frame references.
+- All important terminal information exists in JSON.
+- Large outputs are bounded, paginated, or streamable.
+- Sensitive data is labeled.
+- No AI model, AI API, MCP server, or chat feature is added to PCAT itself.
 
 ### Held V2.x: CTF Triage Improvements
 
@@ -756,7 +1413,58 @@ Exit criteria:
 - Integration failures degrade clearly.
 - External tool commands are reproducible.
 
-## Bug Fix Backlog From V2 Tests
+### V4.0 Candidate: MCP Or LLM-Facing Assistant Layer
+
+Goal:
+
+Expose PCAT's stable evidence, reports, case folders, and tool commands to an assistant or MCP-style workflow after the core analysis and integration layers are reliable.
+
+Status:
+
+Candidate future version only. This should not start before V2 is consolidated and V3 integration semantics are clear.
+
+Dependency:
+
+V2.7 should happen first. V2.7 creates the JSON, evidence, handoff, sensitivity, and command contracts that an MCP/LLM layer would need. V4 should consume those contracts instead of inventing a separate assistant-only data model.
+
+Primary work:
+
+- Define safe read-only operations first:
+  - inspect case summary
+  - list evidence/stories/findings
+  - search evidence
+  - retrieve artifact metadata
+  - suggest next PCAT or external-tool commands
+- Keep capture data local by default.
+- Keep AI/LLM behavior grounded in existing PCAT evidence rather than free-form unsupported claims.
+- Avoid exposing artifact execution or destructive filesystem operations.
+- Treat LLM-written summaries as optional presentation, not as the source of truth.
+
+Why this is later:
+
+An assistant layer would be useful only if PCAT already produces structured, trustworthy evidence. Adding it too early would hide weak core logic behind natural language.
+
+Exit criteria:
+
+- MCP/assistant responses cite concrete PCAT evidence IDs, frames, files, or report fields.
+- The assistant can explain limitations and uncertainty.
+- The assistant does not claim unsupported protocol decoding or artifact validity.
+- All write/export actions remain explicit user commands.
+
+## Historical Bug Backlog From V2 Tests
+
+Status:
+
+Many of the original V2 test failures were addressed across V2.1 through V2.4.1. This section is kept as historical context and as a source of future regression-test ideas. It should not be read as a fully current open-issue list.
+
+Current open themes from this backlog are mainly:
+
+- richer DNS ranking/grouping
+- deeper HTTP object/story clarity
+- MQTT payload workflow
+- ICMP trail grouping
+- USB/HID and unusual-capture handoff
+- broader CTF clue normalization after the core workflow is stable
 
 ### Input Handling
 
@@ -907,6 +1615,10 @@ Reason:
 
 AI prose could hide weak evidence logic. PCAT should first make evidence, stories, and limitations explicit.
 
+Future note:
+
+An MCP/LLM-facing layer is only a V4 candidate after PCAT has stable evidence, case, and integration semantics. It should cite PCAT evidence instead of becoming the source of truth.
+
 ### Expanded CTF Triage
 
 Held.
@@ -941,14 +1653,37 @@ The CLI and structured case folder are the current product. A GUI would add surf
 
 ## Current Priority Order
 
+Completed baseline:
+
 1. V2.1 intake, parser, DNS, and CLI error fixes.
 2. V2.2 analyst briefing, limitation language, and evidence stories.
-3. V2.3 trust hardening: timeline, artifact completeness, extraction accounting, stdout grouping, search consistency, and noise reduction.
+3. V2.3/V2.3.1 trust hardening: timeline, artifact completeness, extraction accounting, stdout grouping, search consistency, and noise reduction.
 4. V2.4 command consolidation and TFTP/UDP workflow: implemented in `0.2.4`, with CLI/help cleanup in `0.2.4.1`.
-5. Remaining protocol workflow: DNS ranking, HTTP object/story clarity, MQTT payloads, and ICMP trails.
-6. Case caching and workflow reuse.
-7. Expanded CTF clue normalization after the core workflow is stronger.
-8. External integrations.
+
+Next active order:
+
+1. V2.4.2 post-prototype repo/release hygiene:
+   - keep README/docs accurate
+   - decide license
+   - add release notes/changelog
+   - revisit GitHub Pages design
+   - triage any new tester reports into regression tests or documented limitations
+2. V2.5 remaining protocol workflow:
+   - DNS ranking/grouping
+   - HTTP object/story clarity
+   - MQTT topic/message payload view
+   - ICMP trail summaries
+   - better handoff for USB/HID, Bluetooth, QUIC/TLS-heavy, and unusual captures
+3. V2.6 case caching and workflow reuse.
+4. V2.7 AI/LLM integration readiness without AI integration:
+   - schema-first JSON contracts
+   - assistant handoff bundle
+   - stable evidence graph
+   - structured recommended commands
+   - sensitivity and truncation metadata
+5. Held V2.x CTF clue normalization after the core workflow is stronger.
+6. V3.0 external integrations with Zeek/Suricata.
+7. V4.0 candidate MCP/LLM-facing assistant layer after structured evidence and integrations are mature.
 
 ## Guiding Rule
 
