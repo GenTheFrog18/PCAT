@@ -4,6 +4,7 @@ from collections import Counter
 
 from .evidence import stable_id
 from .models import AnalysisReport, AnalystBriefing, ArtifactRecord, EvidenceRecord, EvidenceStory, PacketRecord, severity_from_score
+from .utils import format_shell_command
 
 
 SEVERITY_RANK = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}
@@ -58,21 +59,21 @@ def artifact_stories(report: AnalysisReport) -> list[EvidenceStory]:
             why = "PCAT validated the file structure after a magic-byte match, so these are the safest artifact leads to inspect first."
             severity = severity_from_score(top_score)
             confidence = "high"
-            command = f"pcat extract -i {report.summary.file}{' --include-raw' if raw_only(artifacts, report.artifacts) else ''}"
+            command = format_shell_command(["pcat", "extract", "-i", report.summary.file, "--include-raw" if raw_only(artifacts, report.artifacts) else ""])
             limitations: list[str] = []
         elif certainty == "candidate":
             title = f"{len(artifacts)} artifact candidate(s) need validation"
             why = "PCAT found file signatures but could not fully validate structure and completeness. Treat these as leads, not confirmed files."
             severity = severity_from_score(top_score)
             confidence = "medium"
-            command = f"pcat artifacts -i {report.summary.file} --json"
+            command = format_shell_command(["pcat", "artifacts", "-i", report.summary.file, "--json"])
             limitations = ["Candidate artifacts may be incomplete, truncated, carved from partial payloads, or unsupported by PCAT's validator."]
         else:
             title = f"{len(artifacts)} rejected file signature hit(s) skipped"
             why = "Magic bytes were present, but structure validation failed. PCAT preserved the observation while avoiding misleading extraction output."
             severity = "low"
             confidence = "high"
-            command = f"pcat artifacts -i {report.summary.file} --json"
+            command = format_shell_command(["pcat", "artifacts", "-i", report.summary.file, "--json"])
             limitations = ["Rejected hits are not extractable artifacts unless manual analysis proves otherwise."]
         stories.append(EvidenceStory(
             id=stable_id("story", "artifact", certainty, ",".join(item.artifact_id for item in artifacts[:25])),
@@ -111,7 +112,7 @@ def http_story(report: AnalysisReport) -> list[EvidenceStory]:
         confidence="high",
         supporting_evidence_ids=evidence_ids_by_type(report.evidence, {"http_request", "http_download", "http_upload"}),
         anchors={"top_hosts": dict(hosts.most_common(10)), "streams": streams[:25], "transfer_like_records": len(transfers)},
-        recommended_next_command=f"pcat http -i {report.summary.file} --json",
+        recommended_next_command=format_shell_command(["pcat", "http", "-i", report.summary.file, "--json"]),
     )]
 
 
@@ -132,7 +133,7 @@ def dns_story(report: AnalysisReport) -> list[EvidenceStory]:
         confidence="medium" if limitations else "high",
         supporting_evidence_ids=evidence_ids_by_type(report.evidence, {"dns_query"}),
         anchors={"top_queries": dict(queries.most_common(10)), "failed_response_count": failed},
-        recommended_next_command=f"pcat dns -i {report.summary.file} --json",
+        recommended_next_command=format_shell_command(["pcat", "dns", "-i", report.summary.file, "--json"]),
         limitations=limitations[:3],
     )]
 
@@ -150,7 +151,7 @@ def mqtt_story(report: AnalysisReport) -> list[EvidenceStory]:
         confidence="high",
         supporting_evidence_ids=evidence_ids_by_type(report.evidence, {"mqtt_message"}),
         anchors={"topics": dict(topics.most_common(10))},
-        recommended_next_command=f"pcat hunt -i {report.summary.file} --json",
+        recommended_next_command=format_shell_command(["pcat", "hunt", "-i", report.summary.file, "--json"]),
     )]
 
 
@@ -169,7 +170,7 @@ def icmp_story(report: AnalysisReport, packets: list[PacketRecord]) -> list[Evid
         confidence="medium",
         supporting_evidence_ids=icmp_payload_ids,
         anchors={"endpoint_pairs": dict(endpoints.most_common(10)), "payload_evidence_count": len(icmp_payload_ids)},
-        recommended_next_command=f"pcat hunt -i {report.summary.file} --json",
+        recommended_next_command=format_shell_command(["pcat", "hunt", "-i", report.summary.file, "--json"]),
     )]
 
 
@@ -186,7 +187,7 @@ def syn_payload_story(report: AnalysisReport) -> list[EvidenceStory]:
         confidence="high",
         supporting_evidence_ids=ids,
         anchors={"evidence_count": len(ids)},
-        recommended_next_command=f"pcat hunt -i {report.summary.file} --json",
+        recommended_next_command=format_shell_command(["pcat", "hunt", "-i", report.summary.file, "--json"]),
     )]
 
 
@@ -206,7 +207,7 @@ def encrypted_metadata_story(report: AnalysisReport) -> list[EvidenceStory]:
         confidence="high",
         supporting_evidence_ids=[],
         anchors={"tls_quic_packets": encrypted, "packet_count": total},
-        recommended_next_command=f"pcat streams -i {report.summary.file} --json",
+        recommended_next_command=format_shell_command(["pcat", "streams", "-i", report.summary.file, "--json"]),
         limitations=["TLS/QUIC payloads are encrypted; PCAT cannot inspect application content without keys or decrypted traffic."],
     )]
 
@@ -224,7 +225,7 @@ def non_ip_story(report: AnalysisReport) -> list[EvidenceStory]:
         confidence="high",
         supporting_evidence_ids=[],
         anchors={"protocols": protocols},
-        recommended_next_command=f"pcat summary -i {report.summary.file} --json",
+        recommended_next_command=format_shell_command(["pcat", "summary", "-i", report.summary.file, "--json"]),
         limitations=["Use Wireshark or protocol-specific tooling for USB, Bluetooth, HID, or other non-IP payload interpretation."],
     )]
 
@@ -262,9 +263,12 @@ def collect_limitations(report: AnalysisReport, packets: list[PacketRecord]) -> 
 
 def fallback_commands(report: AnalysisReport) -> list[str]:
     file = report.summary.file
-    commands = [f"pcat evidence -i {file} --top 50", f"pcat timeline -i {file} --top 100"]
+    commands = [
+        format_shell_command(["pcat", "evidence", "-i", file, "--top", "50"]),
+        format_shell_command(["pcat", "timeline", "-i", file, "--top", "100"]),
+    ]
     if report.artifacts:
-        commands.append(f"pcat artifacts -i {file} --json")
+        commands.append(format_shell_command(["pcat", "artifacts", "-i", file, "--json"]))
     return commands
 
 

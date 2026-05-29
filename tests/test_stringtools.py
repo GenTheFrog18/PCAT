@@ -4,7 +4,7 @@ import base64
 import pytest
 
 from pcat.errors import InvalidArgumentError
-from pcat.stringtools import custom_flag_regex, decode_interesting, extract_strings_from_bytes, find_matches
+from pcat.stringtools import custom_flag_regex, decode_interesting, detect_flags, extract_strings_from_bytes, find_matches
 
 
 def test_extract_strings_from_bytes():
@@ -34,6 +34,11 @@ def test_custom_flag_regex():
     pattern = custom_flag_regex("CTF101{<flag>}")
     rows = [("raw-file", "CTF101{abc123}")]
     assert find_matches(rows, pattern, regex=True)
+
+
+def test_detect_spaced_flag_string():
+    rows = [("packet:4", "p i c o C T F { p 4 c k 3 7 _ 5 h 4 r k }")]
+    assert detect_flags(rows) == [("packet:4", "picoCTF{p4ck37_5h4rk}")]
 
 
 def test_decode_short_base64_fragment():

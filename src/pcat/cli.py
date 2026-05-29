@@ -5,7 +5,6 @@ import importlib.util
 import json
 import re
 import shutil
-import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -19,13 +18,14 @@ from .analysis import (
     gather_strings,
     payload_sources,
 )
-from .artifacts import detect_artifacts, extract_artifacts, score_artifact, write_artifact_manifest
+from .artifacts import artifact_is_extractable, detect_artifacts, extract_artifacts, score_artifact, write_artifact_manifest
 from .evidence import build_report_evidence
 from .errors import InvalidArgumentError, PCATError
 from .models import to_plain
 from .reports import render_briefing, render_terminal, write_reports
 from .stringtools import (
     decode_interesting,
+    decode_base64_value,
     detect_credentials,
     detect_flags,
     find_matches,
@@ -34,7 +34,7 @@ from .stringtools import (
 )
 from .stories import build_briefing, build_stories
 from .tshark_parser import parse_packets
-from .utils import default_output_dir, prepare_output_dir, tool_version, validate_input
+from .utils import default_output_dir, format_shell_command, prepare_output_dir, tool_version, validate_input
 
 
 DEFAULT_FORMATS = {"html", "json", "csv"}
@@ -172,8 +172,8 @@ def add_analyze(sub) -> None:
     p.add_argument("--include-raw-artifacts", action="store_true", help="Include raw PCAP byte hits when extracting artifacts. Disabled by default to reduce false positives.")
     p.add_argument("--no-ml", action="store_true", help="Disable optional ML anomaly scoring")
     p.add_argument("--ctf-flag", default="", metavar="PATTERN", help='Custom CTF flag format, for example "CTF101{<flag>}"')
-    p.add_argument("--redact", action="store_true", help="Redact sensitive-looking values in previews/reports")
-    p.add_argument("--no-redact", action="store_true", help="Explicitly keep sensitive-looking values unredacted")
+    p.add_argument("--redact", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--no-redact", action="store_true", help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_analyze)
 
 
@@ -486,6 +486,8 @@ def print_json(value) -> None:
 
 def cmd_analyze(args) -> int:
     path = resolve_input(args)
+    if args.redact:
+        raise InvalidArgumentError("Redaction is not implemented yet. PCAT does not redact by default; rerun without --redact.")
     mode = resolve_mode(args)
     options = AnalyzeOptions(mode=mode, top=args.top, min_risk=args.min_risk, no_ml=args.no_ml, ctf_flag=args.ctf_flag)
     formats = parse_formats(args.formats)
@@ -502,8 +504,8 @@ def cmd_analyze(args) -> int:
         payload_rows, payload_map = payload_sources(packets)
         found_count = len(report.artifacts)
         candidates = report.artifacts if args.include_raw_artifacts else [item for item in report.artifacts if item.source != "raw-file"]
-        selected = sorted(candidates, key=lambda item: item.score, reverse=True)[: max(0, args.extract_limit)]
-        saved = extract_artifacts(path, candidates, artifacts_dir, payload_map, limit=args.extract_limit)
+        selected = selectable_artifacts(candidates, payload_map)[: max(0, args.extract_limit)]
+        saved = extract_artifacts(path, selected, artifacts_dir, payload_map, limit=args.extract_limit)
         write_artifact_manifest(selected, artifacts_dir)
         extraction_summary = artifact_extraction_summary(selected, report.artifacts, include_raw=args.include_raw_artifacts, saved=saved)
         if saved:
@@ -514,8 +516,9 @@ def cmd_analyze(args) -> int:
         if not args.quiet and not args.json:
             counts = artifact_certainty_counts(selected)
             print(f"Artifacts found: {found_count}")
-            print(f"Artifacts selected for extraction: {min(len(candidates), args.extract_limit)}")
+            print(f"Artifacts selected for extraction: {len(selected)}")
             print(f"Selected certainty: confirmed={counts['confirmed']} candidate={counts['candidate']} rejected={counts['rejected']}")
+            print_unextractable_summary(candidates)
             print(f"Artifacts extracted: {len(saved)}")
             if extraction_summary["skipped_raw_disabled"]:
                 print(f"Raw-capture artifacts skipped: {extraction_summary['skipped_raw_disabled']} (use --include-raw-artifacts to include them)")
@@ -551,6 +554,9 @@ def cmd_streams(args) -> int:
         return 0
     print("Streams")
     print("-" * 7)
+    if not report.streams:
+        print("No TCP streams found in parsed TShark fields. UDP-only conversations may still appear in summary/evidence.")
+        return 0
     for stream in report.streams[: args.top]:
         print(f"tcp.stream {stream.stream_id}: {stream.src_ip}:{stream.src_port} -> {stream.dst_ip}:{stream.dst_port} packets={stream.packet_count} bytes={stream.byte_count} score={stream.interest_score}")
     return 0
@@ -565,6 +571,9 @@ def cmd_dns(args) -> int:
     print("")
     print("DNS Records")
     print("-" * 11)
+    if not report.dns_records:
+        print("No DNS records found in parsed TShark fields.")
+        return 0
     for record in report.dns_records[: args.top]:
         print(f"frame={record.frame_number} {record.src_ip} -> {record.dst_ip} query={record.query} answer={record.answer} rcode={record.rcode}")
     return 0
@@ -579,6 +588,9 @@ def cmd_http(args) -> int:
     print("")
     print("HTTP Records")
     print("-" * 12)
+    if not report.http_records:
+        print("No HTTP records found in parsed TShark fields.")
+        return 0
     for record in report.http_records[: args.top]:
         uri = record.full_uri or f"{record.host}{record.uri}"
         length = f" length={record.content_length}" if record.content_length else ""
@@ -618,11 +630,11 @@ def cmd_timeline(args) -> int:
     report = analyze(resolve_input(args), AnalyzeOptions(no_ml=True, min_risk=0))
     events = report.timeline[: args.top]
     if not events:
-        events = [
+        events = sorted([
             {"timestamp": item.timestamp, "title": item.type, "detail": item.preview, "severity": "info"}
             for item in report.evidence
             if item.timestamp is not None
-        ][: args.top]
+        ], key=lambda item: (float(item["timestamp"]), item["title"]))[: args.top]
     if args.json:
         print_json(events)
         return 0
@@ -739,9 +751,8 @@ def cmd_extract(args) -> int:
     _, payload_map = payload_sources(parse_packets(path)) if not args.no_payloads else ([], {})
     all_artifacts = [score_artifact(artifact) for artifact in detect_artifacts(path, list(payload_map.items()), include_raw=True)]
     artifacts = [artifact for artifact in all_artifacts if include_raw or artifact.source != "raw-file"]
-    ranked = sorted(artifacts, key=lambda a: a.score, reverse=True)
-    selected = ranked[: max(0, args.limit)]
-    saved = extract_artifacts(path, ranked, out / "artifacts", payload_map, limit=args.limit)
+    selected = selectable_artifacts(artifacts, payload_map)[: max(0, args.limit)]
+    saved = extract_artifacts(path, selected, out / "artifacts", payload_map, limit=args.limit)
     manifest = write_artifact_manifest(selected, out / "artifacts")
     counts = artifact_certainty_counts(selected)
     summary = artifact_extraction_summary(selected, all_artifacts, include_raw=include_raw, saved=saved)
@@ -768,6 +779,7 @@ def cmd_extract(args) -> int:
     print(f"Artifacts found: {len(all_artifacts)}")
     print(f"Artifacts selected for extraction: {len(selected)}")
     print(f"Selected certainty: confirmed={counts['confirmed']} candidate={counts['candidate']} rejected={counts['rejected']}")
+    print_unextractable_summary(artifacts)
     if summary["skipped_raw_disabled"]:
         print(f"Raw-capture artifacts skipped: {summary['skipped_raw_disabled']} (use --include-raw to include raw PCAP byte hits)")
     if summary["validation_failed"] or summary["skipped_incomplete"] or summary["missing_source"]:
@@ -822,7 +834,7 @@ def cmd_hunt(args) -> int:
     payload_rows, payload_map = payload_sources(packets)
     rows = gather_strings(path, payload_rows, include_raw=True, min_len=args.min_len)
     flags = detect_flags(rows, args.ctf_flag)
-    creds = detect_credentials(rows)
+    creds = dedupe_hunt_rows(smtp_auth_credentials_from_packets(packets) + detect_credentials(rows))
     decoded = []
     for source, text in rows:
         for item in decode_interesting(text):
@@ -885,9 +897,36 @@ def cmd_hunt(args) -> int:
     elif artifacts:
         print("- Artifact signatures were rejected by validation; inspect pcat artifacts output before attempting extraction.")
     if flags or creds:
-        print(f"- Save strings: pcat strings -i {shlex.quote(str(path))} --output strings.txt")
-    print(f"- Run full report: pcat analyze -i {shlex.quote(str(path))} --ctf --extract -o {shlex.quote(str(default_output_dir(path)))}")
+        print(f"- Save strings: {format_shell_command(['pcat', 'strings', '-i', path, '--output', 'strings.txt'])}")
+    print(f"- Run full report: {format_shell_command(['pcat', 'analyze', '-i', path, '--ctf', '--extract', '-o', default_output_dir(path)])}")
     return 0
+
+
+def smtp_auth_credentials_from_packets(packets) -> list[tuple[str, str]]:
+    rows = []
+    for packet in packets:
+        username = decode_base64_value(packet.smtp_auth_username)
+        password = decode_base64_value(packet.smtp_auth_password)
+        if not username and not password:
+            continue
+        parts = ["SMTP AUTH"]
+        if username:
+            parts.append(f"username={username}")
+        if password:
+            parts.append(f"password={password}")
+        rows.append((f"frame:{packet.frame_number}", " ".join(parts)))
+    return rows
+
+
+def dedupe_hunt_rows(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    seen = set()
+    deduped = []
+    for row in rows:
+        if row in seen:
+            continue
+        seen.add(row)
+        deduped.append(row)
+    return deduped
 
 
 def cmd_doctor(args) -> int:
@@ -978,23 +1017,44 @@ def load_artifacts_for_command(path: Path, include_raw: bool, include_payloads: 
     return [score_artifact(artifact) for artifact in artifacts]
 
 
+def selectable_artifacts(artifacts, payload_map: dict[str, bytes]):
+    return [
+        artifact
+        for artifact in sorted(artifacts, key=lambda a: a.score, reverse=True)
+        if artifact_is_extractable(artifact) and artifact_source_available(artifact, payload_map)
+    ]
+
+
+def artifact_source_available(artifact, payload_map: dict[str, bytes]) -> bool:
+    return artifact.source == "raw-file" or artifact.source in payload_map
+
+
+def print_unextractable_summary(artifacts) -> None:
+    rejected = sum(1 for artifact in artifacts if artifact.certainty == "rejected")
+    incomplete = sum(
+        1
+        for artifact in artifacts
+        if artifact.certainty != "rejected" and (artifact.validation == "truncated" or artifact.complete_file_valid is False)
+    )
+    missing_source = sum(1 for artifact in artifacts if artifact.source != "raw-file" and artifact.extraction_status == "skipped_missing_source")
+    if rejected or incomplete or missing_source:
+        print(f"Unextractable artifact hits: rejected={rejected} incomplete={incomplete} missing_source={missing_source}")
+
+
 def has_extractable_artifacts(artifacts) -> bool:
     return any(artifact_is_extractable(artifact) for artifact in artifacts)
 
 
-def artifact_is_extractable(artifact) -> bool:
-    return (
-        artifact.certainty != "rejected"
-        and artifact.validation != "truncated"
-        and artifact.complete_file_valid is not False
-    )
-
-
 def extract_command_for_artifacts(path: Path, artifacts) -> str:
-    command = f"pcat extract -i {shlex.quote(str(path))} -o {shlex.quote(str(default_output_dir(path)))}"
-    if needs_include_raw(artifacts):
-        command += " --include-raw"
-    return command
+    return format_shell_command([
+        "pcat",
+        "extract",
+        "-i",
+        path,
+        "-o",
+        default_output_dir(path),
+        "--include-raw" if needs_include_raw(artifacts) else "",
+    ])
 
 
 def needs_include_raw(artifacts) -> bool:
@@ -1130,6 +1190,7 @@ def print_hunt_section(title: str, rows: list[tuple[str, str]], limit: int) -> N
 def print_hunt_protocol_sections(packets, limit: int) -> None:
     mqtt_rows = []
     smtp_rows = []
+    icmp_rows = []
     syn_payload_rows = []
     http_object_rows = []
     for packet in packets:
@@ -1152,11 +1213,17 @@ def print_hunt_protocol_sections(packets, limit: int) -> None:
                 parts.append(packet.smtp_response)
             if packet.smtp_message:
                 parts.append(packet.smtp_message)
+            decoded_username = decode_base64_value(packet.smtp_auth_username)
+            decoded_password = decode_base64_value(packet.smtp_auth_password)
             if packet.smtp_auth_username:
-                parts.append(f"username={packet.smtp_auth_username}")
+                parts.append(f"username={decoded_username or packet.smtp_auth_username}")
             if packet.smtp_auth_password:
-                parts.append("password field present")
+                parts.append(f"password={decoded_password}" if decoded_password else "password field present")
             smtp_rows.append((f"frame:{packet.frame_number}", "; ".join(parts)))
+        if packet.transport == "ICMP" and packet.payload_hex:
+            preview = payload_preview(packet.payload_hex)
+            if has_interesting_payload_preview(preview):
+                icmp_rows.append((f"frame:{packet.frame_number}", preview))
         if packet.http_status and (packet.http_content_type or packet.http_content_length):
             parts = [f"status={packet.http_status}"]
             if packet.http_uri:
@@ -1171,7 +1238,13 @@ def print_hunt_protocol_sections(packets, limit: int) -> None:
     print_hunt_section("HTTP Object / Transfer Clues", http_object_rows, limit)
     print_hunt_section("SMTP Records", smtp_rows, limit)
     print_hunt_section("MQTT Records", mqtt_rows, limit)
+    print_hunt_section("ICMP Payload Clues", icmp_rows, limit)
     print_hunt_section("SYN Payload Candidates", syn_payload_rows, limit)
+
+
+def has_interesting_payload_preview(text: str) -> bool:
+    lowered = text.lower()
+    return any(token in lowered for token in ["ssh-", "openssh", "http/", "ftp ", "smtp", "ptunnel", "flag", "ctf{"])
 
 
 def is_syn_payload(packet) -> bool:

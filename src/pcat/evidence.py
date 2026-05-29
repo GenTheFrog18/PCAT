@@ -17,7 +17,7 @@ from .models import (
     SmtpRecord,
     StreamRecord,
 )
-from .stringtools import decode_interesting, detect_credentials, detect_flags
+from .stringtools import decode_base64_value, decode_interesting, detect_credentials, detect_flags
 
 
 def stable_id(*parts: object) -> str:
@@ -163,6 +163,8 @@ def http_evidence(records: list[HttpRecord]) -> list[EvidenceRecord]:
 def smtp_evidence(records: list[SmtpRecord]) -> list[EvidenceRecord]:
     evidence = []
     for r in records[:500]:
+        decoded_username = decode_base64_value(r.auth_username)
+        decoded_password = decode_base64_value(r.auth_password)
         evidence.append(EvidenceRecord(
             evidence_id=stable_id("smtp", r.frame_number, r.stream_id, r.command, r.parameter, r.message, r.response),
             type="smtp_message" if r.message else "smtp_command",
@@ -188,6 +190,36 @@ def smtp_evidence(records: list[SmtpRecord]) -> list[EvidenceRecord]:
             confidence_score=0.9,
             handoff_filters=stream_or_frame_filter(r.stream_id, r.frame_number),
         ))
+        if decoded_username or decoded_password:
+            fields: dict[str, Any] = {
+                "auth_username_raw": r.auth_username,
+                "auth_password_present": bool(r.auth_password),
+                "auth_username": decoded_username,
+                "auth_password": decoded_password,
+                "sensitive": True,
+            }
+            preview_parts = []
+            if decoded_username:
+                preview_parts.append(f"username={decoded_username}")
+            if decoded_password:
+                preview_parts.append(f"password={decoded_password}")
+            evidence.append(EvidenceRecord(
+                evidence_id=stable_id("smtp_auth", r.frame_number, r.stream_id, decoded_username, bool(decoded_password)),
+                type="smtp_auth_credential",
+                source_module="protocols.smtp",
+                protocol="SMTP",
+                timestamp=r.timestamp,
+                frame_start=r.frame_number,
+                frame_end=r.frame_number,
+                stream_id=r.stream_id,
+                src_ip=r.src_ip,
+                dst_ip=r.dst_ip,
+                fields=fields,
+                preview="SMTP AUTH " + " ".join(preview_parts),
+                confidence="high",
+                confidence_score=0.9,
+                handoff_filters=stream_or_frame_filter(r.stream_id, r.frame_number),
+            ))
     return evidence
 
 

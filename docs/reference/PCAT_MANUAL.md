@@ -79,7 +79,8 @@ V2 adds evidence-first output and safer workspace behavior:
 - TCP/UDP payload strings are parsed directly when available.
 - Artifact hits include certainty: `confirmed`, `candidate`, or `rejected`, plus the technical validation state.
 - `extract --limit N` limits how many artifacts are actually written.
-- Invalid artifacts are not extracted.
+- Invalid, truncated, incomplete, and source-missing artifacts are not selected for extraction.
+- The outer gzip wrapper of a `.pcap.gz` input is not treated as an embedded artifact.
 - Generated next-step commands quote paths that contain spaces.
 
 ## Exit Codes
@@ -359,7 +360,7 @@ pcat evidence -i capture.pcap --json
 Expected output:
 
 - Stable evidence ID.
-- Evidence type, such as `flow`, `stream`, `dns_query`, `http_request`, `artifact_signature`, `payload_string`, or `syn_payload`.
+- Evidence type, such as `flow`, `stream`, `dns_query`, `http_request`, `smtp_auth_credential`, `artifact_signature`, `payload_string`, or `syn_payload`.
 - Confidence level.
 - Frame or stream anchor when available.
 - Preview text.
@@ -373,7 +374,7 @@ Useful options:
 
 ## `pcat timeline`
 
-Shows chronological events from findings. PCAT uses linked evidence timestamps when available and prints `unknown` when an event has no trustworthy timestamp. If no findings timeline exists, PCAT falls back to timestamped evidence records.
+Shows chronological events from findings. PCAT uses linked evidence timestamps when available and prints `unknown` when an event has no trustworthy timestamp. If no findings timeline exists, PCAT falls back to timestamped evidence records sorted chronologically.
 
 ```bash
 pcat timeline -i capture.pcap
@@ -557,6 +558,7 @@ Expected metadata:
 
 - Number of artifacts found, selected, and extracted.
 - Selected certainty counts for confirmed, candidate, and rejected hits.
+- Unextractable rejected/incomplete hit counts.
 - Counts for skipped raw-disabled, validation-failed, incomplete, and missing-source artifacts.
 - HTTP object export count/status when `--http` is used.
 - Extracted path.
@@ -627,14 +629,15 @@ Useful options:
 
 Expected sections:
 
-- Possible flags.
-- Possible credentials/secrets.
+- Possible flags, including spaced flags that can be normalized safely.
+- Possible credentials/secrets, including decoded SMTP AUTH values when TShark exposes them.
 - Possible email clues.
 - Possible clue strings.
 - Decoded-looking strings.
 - HTTP object / transfer clues.
 - SMTP records.
 - MQTT records.
+- ICMP payload clues.
 - SYN payload candidates.
 - Detected files.
 - Recommended next steps.
@@ -688,6 +691,7 @@ Use different PCAPs if available:
 | Large HTTP/multipart | `summary`, `http`, `hunt`, `analyze` | No CSV field-size crash |
 | Encoded text | `hunt`, `analyze` | Decoded-looking string |
 | Invalid file | any command | Friendly error, exit code 4 |
+| Existing output folder without `--force` | `analyze -o`, `extract -o` | Friendly error, exit code 5 |
 | Invalid regex | `strings --grep`, `search --regex` | Friendly error, exit code 2 |
 | Missing `tshark` | `analyze` | Friendly error, exit code 3 |
 

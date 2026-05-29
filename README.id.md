@@ -55,14 +55,14 @@ Setiap command mendukung `--json` untuk automation dan handoff ke tim.
 - Analyst briefing dan evidence stories untuk merangkum hal paling penting, batasan analisis, dan command berikutnya.
 - Parser lebih aman untuk capture HTTP/multipart besar.
 - Ekstraksi string dari payload TCP/UDP, termasuk Raw IPv4 TCP payload.
-- Mode hunt untuk CTF: flag, credential, clue string, fragment base64 pendek, rekonstruksi berdasarkan timestamp, dan SYN packet yang membawa payload.
+- Mode hunt untuk CTF: flag, flag dengan spasi, credential, clue string, fragment base64 pendek, rekonstruksi berdasarkan timestamp, banner payload ICMP, dan SYN packet yang membawa payload.
 - Triage transfer HTTP memakai metadata request/response, content type, content length, dan indikasi upload/download besar.
-- Bukti SMTP dan MQTT ditampilkan jika field tersedia dari TShark.
+- Bukti SMTP dan MQTT ditampilkan jika field tersedia dari TShark, termasuk evidence credential SMTP AUTH yang sudah di-decode jika tersedia.
 - Ekstraksi DNS lebih luas untuk answer umum seperti A, AAAA, CNAME, PTR, NS, MX, dan TXT jika field tersedia dari TShark.
-- Timeline memakai timestamp evidence jika tersedia dan menampilkan `unknown` daripada membuat waktu palsu `0.000000`.
+- Timeline memakai timestamp evidence jika tersedia, mengurutkan fallback evidence secara kronologis, dan menampilkan `unknown` daripada membuat waktu palsu `0.000000`.
 - Deteksi artifact berbasis magic-byte dengan label certainty: `confirmed`, `candidate`, atau `rejected`, plus field trust untuk magic header, struktur, kelengkapan file, truncation, source scope, dan alasan skip.
 - Artifact manager membuat `artifacts/manifest.json`; rejected artifact digabung per tipe/alasan di stdout default, sementara offset detail tetap ada di JSON atau verbose output.
-- Ekstraksi lebih aman: `--limit` membatasi file yang benar-benar ditulis, artifact invalid/incomplete dilewati, raw carving harus opt-in, alasan skip dihitung, dan export HTTP object dilaporkan terpisah dari artifact carving.
+- Ekstraksi lebih aman: `--limit` membatasi file yang benar-benar ditulis, artifact invalid/incomplete tidak dipilih untuk extraction, raw carving harus opt-in, wrapper input `.pcap.gz` tidak dianggap artifact embedded, alasan skip dihitung, dan export HTTP object dilaporkan terpisah dari artifact carving.
 - `strings` dan `search` memakai source behavior yang sama dan mendukung `--source raw`, `--source packet`, atau `--source all`.
 - Report JSON memakai `report.json`, `stories.json`, dan `evidence.json`; export CSV mencakup flows, hosts, DNS, HTTP, artifacts, dan findings.
 - Command rekomendasi sudah aman untuk path yang mengandung spasi.

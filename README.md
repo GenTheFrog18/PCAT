@@ -55,14 +55,14 @@ Every command supports `--json` for automation and teammate handoff.
 - Analyst briefing and evidence stories that summarize what matters first, what is limited, and what command to run next.
 - Safer parser behavior for large HTTP/multipart captures.
 - TCP/UDP payload string extraction, including Raw IPv4 TCP payloads.
-- CTF hunt support for flags, credentials, clue strings, short base64 fragments, timestamp-order reconstruction, and SYN packets carrying payload.
+- CTF hunt support for flags, spaced flag strings, credentials, clue strings, short base64 fragments, timestamp-order reconstruction, ICMP payload banners, and SYN packets carrying payload.
 - HTTP transfer triage using request/response metadata, content type, content length, and large upload/download hints.
-- SMTP and MQTT evidence surfacing when TShark exposes those fields.
+- SMTP and MQTT evidence surfacing when TShark exposes those fields, including decoded SMTP AUTH credential evidence when available.
 - Broader DNS extraction for common answer types such as A, AAAA, CNAME, PTR, NS, MX, and TXT where TShark exposes them.
-- Timeline events use linked evidence timestamps when available and show `unknown` instead of inventing time zero.
+- Timeline events use linked evidence timestamps when available, sort fallback evidence chronologically, and show `unknown` instead of inventing time zero.
 - Magic-byte artifact detection with certainty labels: `confirmed`, `candidate`, or `rejected`, plus trust fields for magic-header, structure, completeness, truncation, source scope, and skip reason.
 - Artifact manager output with `artifacts/manifest.json`; rejected artifacts are grouped in default stdout, with individual offsets preserved in JSON or verbose output.
-- Safer extraction: `--limit` limits actual writes, invalid or incomplete artifacts are skipped, raw carving is opt-in, skipped reasons are counted, and HTTP object export is reported separately from artifact carving.
+- Safer extraction: `--limit` limits actual writes, invalid/incomplete artifacts are not selected for extraction, raw carving is opt-in, input `.pcap.gz` wrappers are not treated as embedded artifacts, skipped reasons are counted, and HTTP object export is reported separately from artifact carving.
 - `strings` and `search` share source behavior and support `--source raw`, `--source packet`, or `--source all`.
 - JSON reports use `report.json`, `stories.json`, and `evidence.json`; CSV exports include flows, hosts, DNS, HTTP, artifacts, and findings.
 - Copy-paste-safe generated commands for paths containing spaces.

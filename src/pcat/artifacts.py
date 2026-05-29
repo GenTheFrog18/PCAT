@@ -80,10 +80,23 @@ def find_magic(data: bytes, source: str) -> list[ArtifactRecord]:
 def detect_artifacts(raw_path: Path, payloads: list[tuple[str, bytes]] | None = None, include_raw: bool = True) -> list[ArtifactRecord]:
     results: list[ArtifactRecord] = []
     if include_raw:
-        results.extend(find_magic(raw_path.read_bytes(), "raw-file"))
+        results.extend(
+            artifact
+            for artifact in find_magic(raw_path.read_bytes(), "raw-file")
+            if not is_input_container_artifact(raw_path, artifact)
+        )
     for source, payload in payloads or []:
         results.extend(find_magic(payload, source))
     return dedupe_artifacts(results)
+
+
+def is_input_container_artifact(raw_path: Path, artifact: ArtifactRecord) -> bool:
+    return (
+        artifact.source == "raw-file"
+        and artifact.kind == "gzip"
+        and artifact.offset == 0
+        and raw_path.name.lower().endswith(".pcap.gz")
+    )
 
 
 def signature_for_kind(kind: str) -> Signature | None:
@@ -170,7 +183,12 @@ def extract_artifacts(
     raw_data = raw_path.read_bytes()
     counters: dict[str, int] = {}
     saved: list[ArtifactRecord] = []
-    selected = sorted(artifacts, key=lambda item: item.score, reverse=True)
+    ranked = sorted(artifacts, key=lambda item: item.score, reverse=True)
+    for artifact in ranked:
+        if artifact_is_extractable(artifact):
+            continue
+        mark_unextractable_artifact(artifact)
+    selected = [item for item in ranked if artifact_is_extractable(item)]
     if limit is not None:
         selected = selected[: max(0, limit)]
     for artifact in selected:
@@ -209,6 +227,23 @@ def extract_artifacts(
         score_artifact(artifact)
         saved.append(artifact)
     return saved
+
+
+def artifact_is_extractable(artifact: ArtifactRecord) -> bool:
+    return (
+        artifact.certainty != "rejected"
+        and artifact.validation != "truncated"
+        and artifact.complete_file_valid is not False
+    )
+
+
+def mark_unextractable_artifact(artifact: ArtifactRecord) -> None:
+    if artifact.certainty == "rejected" or artifact.validation == "invalid":
+        artifact.extraction_status = "skipped_invalid"
+        artifact.skip_reason = "validation_failed"
+    elif artifact.validation == "truncated" or artifact.complete_file_valid is False:
+        artifact.extraction_status = "skipped_incomplete"
+        artifact.skip_reason = "incomplete_or_truncated"
 
 
 def write_artifact_manifest(artifacts: list[ArtifactRecord], artifacts_dir: Path) -> Path:
@@ -430,6 +465,9 @@ def score_artifact(artifact: ArtifactRecord) -> ArtifactRecord:
         if artifact.kind == "gzip":
             cap = min(cap, 35)
         score = min(score, cap)
+    if artifact.kind in media_value:
+        score = min(score, 45)
+        reasons.append("ordinary media artifact capped below critical without stronger context")
     artifact.score = max(0, min(100, score))
     artifact.reasons = reasons
     return artifact

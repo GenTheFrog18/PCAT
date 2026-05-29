@@ -548,6 +548,32 @@ Implementation notes:
 - Default artifact stdout groups rejected records by type/reason; JSON and verbose output keep individual records.
 - Default decoding/clue output filters common infrastructure noise more aggressively.
 
+### V2.3.1: Trust Patch From 2026-05-29 Testing
+
+Status:
+
+Implemented as a patch under the existing `0.2.3` tool/schema version.
+
+Primary work:
+
+- Quote generated next-step commands everywhere so paths with spaces are copy-paste safe.
+- Hide misleading redaction help; `--redact` exits with code `2` because redaction is not implemented.
+- Return output/report error code `5` for existing output folders instead of input error code `4`.
+- Suppress raw offset-0 gzip hits that are only the input `.pcap.gz` wrapper.
+- Select only extractable artifacts for extraction while preserving rejected/incomplete metadata for review.
+- Sort fallback timeline evidence chronologically and suppress low-context unknown-time decoder/clue noise.
+- Add explicit empty-state messages for `http`, `dns`, and `streams`.
+- Detect normalized spaced flag strings, promote decoded SMTP AUTH credentials, and promote obvious protocol banners inside ICMP payloads.
+- Cap ordinary media artifact scores below critical unless future contextual scoring raises them.
+
+Deferred from this patch:
+
+- PE/MZ executable carving and ranking.
+- HTTP exploit-chain/story ranking.
+- MIME/TNEF attachment export.
+- TFTP reassembly/export.
+- Command consolidation for `files`, `suspicious`, and `search`.
+
 ### V2.4: Protocol-Specific Views And Reassembly
 
 Goal:
@@ -652,13 +678,12 @@ Held for later design.
 
 Reason:
 
-CTF improvements are useful, but this area can grow too quickly and become a vague detector collection. PCAT should first consolidate its core value: reliable intake, clear briefing, grouped evidence, and honest handoff.
+CTF improvements are useful, but this area can grow too quickly and become a vague detector collection. PCAT should first consolidate its core value: reliable intake, clear briefing, grouped evidence, and honest handoff. Basic spaced flag normalization was added in V2.3.1; deeper CTF logic remains held.
 
 Detailed future CTF planning lives in `PCAT_FUTURE_CTF_UPDATE.md`.
 
 Primary work:
 
-- Detect spaced flag strings.
 - Detect null-separated flag strings.
 - Detect braced strings with separators.
 - Detect CVE patterns.
@@ -785,7 +810,7 @@ V2.2 guidance tests:
 
 Later V2.x tests:
 
-- spaced flag detection.
+- broader separated-flag detection beyond the basic V2.3.1 spaced flag normalization.
 - null-separated flag detection.
 - overlapping artifact grouping.
 - timeline timestamps with nonzero packet/evidence times.

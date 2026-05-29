@@ -1,5 +1,5 @@
 from pcat.cli import main, parse_formats
-from pcat.models import PacketRecord
+from pcat.models import AnalysisReport, CaptureSummary, EvidenceRecord, PacketRecord
 
 
 def test_parse_formats_aliases():
@@ -111,7 +111,8 @@ def test_extract_reports_rejected_artifact_when_nothing_extracts(tmp_path, capsy
     output = capsys.readouterr().out
     assert code == 0
     assert "Artifacts extracted: 0" in output
-    assert "rejected=1" in output
+    assert "Artifacts selected for extraction: 0" in output
+    assert "Unextractable artifact hits: rejected=1" in output
     assert "No artifacts were extracted" in output
 
 
@@ -145,3 +146,63 @@ def test_extract_reports_http_export_separately(tmp_path, capsys, monkeypatch):
     assert code == 0
     assert "HTTP objects exported: 2" in output
     assert "Artifacts extracted: 0" in output
+
+
+def test_analyze_redact_returns_unsupported_argument(tmp_path, capsys):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"abc")
+    code = main(["analyze", "-i", str(sample), "--redact"])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "Redaction is not implemented yet" in captured.err
+
+
+def test_analyze_help_hides_redaction_flags(capsys):
+    assert main(["analyze", "-h"]) == 0
+    output = capsys.readouterr().out
+    assert "--redact" not in output
+
+
+def test_existing_output_folder_returns_report_write_error(tmp_path, capsys):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"abc")
+    out = tmp_path / "case"
+    out.mkdir()
+    code = main(["extract", "-i", str(sample), "--no-payloads", "-o", str(out)])
+    assert code == 5
+    assert "Output folder already exists" in capsys.readouterr().err
+
+
+def test_timeline_fallback_sorts_evidence_before_top(tmp_path, capsys, monkeypatch):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"abc")
+
+    def fake_analyze(_path, _options):
+        return AnalysisReport(
+            summary=CaptureSummary(file=str(sample), size_bytes=3),
+            evidence=[
+                EvidenceRecord("late", "flow", timestamp=2.0, preview="late"),
+                EvidenceRecord("early", "flow", timestamp=1.0, preview="early"),
+            ],
+        )
+
+    monkeypatch.setattr("pcat.cli.analyze", fake_analyze)
+    assert main(["timeline", "-i", str(sample)]) == 0
+    output = capsys.readouterr().out
+    assert output.index("1.000000") < output.index("2.000000")
+
+
+def test_empty_protocol_views_are_explicit(tmp_path, capsys, monkeypatch):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"abc")
+
+    def fake_analyze(_path, _options):
+        return AnalysisReport(summary=CaptureSummary(file=str(sample), size_bytes=3))
+
+    monkeypatch.setattr("pcat.cli.analyze", fake_analyze)
+    assert main(["http", "-i", str(sample)]) == 0
+    assert "No HTTP records found" in capsys.readouterr().out
+    assert main(["dns", "-i", str(sample)]) == 0
+    assert "No DNS records found" in capsys.readouterr().out
+    assert main(["streams", "-i", str(sample)]) == 0
+    assert "No TCP streams found" in capsys.readouterr().out

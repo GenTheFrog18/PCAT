@@ -458,6 +458,7 @@ PCAT currently generates these evidence types:
 - `http_download`
 - `smtp_command`
 - `smtp_message`
+- `smtp_auth_credential`
 - `mqtt_message`
 - `syn_payload`
 - `icmp_payload`
@@ -563,7 +564,7 @@ Validation behavior:
 
 - PNG, JPG, GIF, PDF, gzip, BMP, SQLite, ELF, and ZIP receive basic structure validation.
 - RAR and 7z are currently treated as signature-only.
-- Invalid artifacts are not extracted.
+- Invalid, truncated, incomplete, and source-missing artifacts are not selected for extraction.
 
 Scoring behavior considers:
 
@@ -578,11 +579,12 @@ Scoring behavior considers:
 Extraction behavior:
 
 - Writes to `<out>/artifacts/`.
-- Uses ranked artifact order.
-- Honors `--limit`.
+- Uses ranked artifact order after filtering out rejected, truncated, incomplete, and source-missing hits.
+- Honors `--limit` for extractable selections.
 - Computes SHA256.
 - Sets extracted file path, size, validation, type tag, and extraction status.
 - Writes `artifacts/manifest.json`.
+- Suppresses the outer gzip wrapper of `.pcap.gz` inputs so it is not reported as an embedded artifact.
 
 Raw PCAP extraction is disabled by default for `extract` and `analyze --extract`. Use:
 
@@ -632,8 +634,6 @@ Main options:
 - `--include-raw-artifacts`: include raw PCAP byte hits during extraction.
 - `--no-ml`: disable optional ML anomaly scoring.
 - `--ctf-flag PATTERN`: custom CTF flag format.
-- `--redact`: accepted option, but redaction is not implemented yet.
-- `--no-redact`: explicit no-redaction option.
 - `--json`: print full report JSON.
 
 Output:
@@ -752,7 +752,8 @@ Behavior:
 - Uses finding timeline when findings exist.
 - Timeline events use linked evidence timestamps when available.
 - Events without a known timestamp render as `unknown` and use `null` in JSON.
-- Falls back to timestamped evidence when finding timeline is empty.
+- Falls back to timestamped evidence when finding timeline is empty and sorts that evidence chronologically before applying `--top`.
+- Low-context unknown-time decoder/clue events are hidden from the default timeline.
 
 ### `pcat strings`
 
@@ -883,7 +884,7 @@ Writes:
 
 Reports:
 
-- Found, selected, extracted, rejected, validation-failed, incomplete, missing-source, and raw-disabled counts.
+- Found, selected, extracted, unextractable rejected/incomplete, validation-failed, incomplete, missing-source, and raw-disabled counts.
 - HTTP object export count and status separately from artifact carving.
 - A `--include-raw` recommendation when useful artifacts were skipped because raw carving is disabled.
 
@@ -935,14 +936,15 @@ Options:
 
 Sections:
 
-- Possible flags.
-- Possible credentials/secrets.
+- Possible flags, including spaced flag strings when they can be normalized safely.
+- Possible credentials/secrets, including decoded SMTP AUTH values when TShark exposes them.
 - Possible email clues.
 - Possible clues.
 - Decoded-looking strings.
 - HTTP object/transfer clues.
 - SMTP records.
 - MQTT records.
+- ICMP payload clues for obvious protocol banners.
 - SYN payload candidates.
 - Detected files.
 - Recommended next steps.
@@ -1116,6 +1118,8 @@ Handoff filters are embedded in findings, evidence records, and terminal reports
 
 PCAT does not redact by default.
 
+`pcat analyze --redact` is intentionally unsupported in this version and exits with code `2`. The hidden `--no-redact` compatibility flag is a no-op.
+
 Reports may contain:
 
 - Passwords.
@@ -1141,7 +1145,7 @@ Extracted artifacts may be malicious. Treat extracted files as untrusted.
 - Raw file artifact hits are noisy.
 - Artifact `candidate` records are leads; inspect completeness/truncation/source-scope fields before trusting them.
 - Packet-local artifacts can be fragments of larger HTTP, TFTP, MQTT, or stream data.
-- Redaction flags exist, but redaction behavior is not implemented yet.
+- Redaction behavior is not implemented yet; the visible workflow is no-redaction by default.
 - Zeek and Suricata are only checked by `doctor`, not orchestrated.
 
 ## Planned Features Not Yet Implemented

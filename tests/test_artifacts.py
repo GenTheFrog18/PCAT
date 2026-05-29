@@ -58,6 +58,32 @@ def test_truncated_gzip_is_candidate_not_extracted(tmp_path):
     assert artifacts[0].extraction_status == "skipped_incomplete"
 
 
+def test_pcap_gz_input_wrapper_is_not_reported_as_artifact(tmp_path):
+    sample = tmp_path / "sample.pcap.gz"
+    sample.write_bytes(gzip.compress(b"pcap bytes placeholder"))
+    artifacts = detect_artifacts(sample, include_raw=True)
+    assert artifacts == []
+
+
+def test_embedded_packet_gzip_still_detected(tmp_path):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"not gzip")
+    artifacts = detect_artifacts(sample, [("packet:7", gzip.compress(b"flag{inside}"))], include_raw=True)
+    assert len(artifacts) == 1
+    assert artifacts[0].kind == "gzip"
+    assert artifacts[0].source == "packet:7"
+    assert artifacts[0].certainty == "confirmed"
+
+
+def test_ordinary_media_artifact_is_not_critical(tmp_path):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"not image")
+    artifacts = detect_artifacts(sample, [("packet:9", b"GIF89a;")], include_raw=False)
+    assert artifacts[0].kind == "gif"
+    assert artifacts[0].certainty == "confirmed"
+    assert artifacts[0].score < 75
+
+
 def test_signature_only_artifact_is_candidate(tmp_path):
     sample = tmp_path / "sample.pcap"
     sample.write_bytes(b"noiseRar!\x1a\x07\x00payload")

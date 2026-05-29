@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
 
-from .errors import InputFileError, MissingDependencyError
+from .errors import InputFileError, MissingDependencyError, ReportWriteError
 
 
 ARCHIVE_SUFFIXES = {
@@ -147,11 +148,15 @@ def default_output_dir(input_path: Path) -> Path:
 
 def prepare_output_dir(path: Path, force: bool) -> Path:
     if path.exists() and not path.is_dir():
-        raise InputFileError(f"Output path exists and is not a folder: {path}")
+        raise ReportWriteError(f"Output path exists and is not a folder: {path}")
     if path.exists() and not force:
-        raise InputFileError(f"Output folder already exists: {path}. Use --force to overwrite PCAT-generated files.")
+        raise ReportWriteError(f"Output folder already exists: {path}. Use --force to overwrite PCAT-generated files.")
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def format_shell_command(parts: list[object] | tuple[object, ...]) -> str:
+    return " ".join(shlex.quote(str(part)) for part in parts if part is not None and str(part) != "")
 
 
 def is_tty() -> bool:

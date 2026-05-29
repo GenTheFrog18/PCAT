@@ -27,6 +27,7 @@ from .models import (
     severity_from_score,
 )
 from .stringtools import (
+    decode_base64_value,
     decode_interesting,
     dedupe_strings,
     detect_credentials,
@@ -515,6 +516,28 @@ def smtp_findings(records: list[SmtpRecord], strings: list[tuple[str, str]]) -> 
             "Plaintext email can expose URLs, attachments, subjects, and passwords.",
             "Review SMTP streams and email bodies.",
         ))
+    for record in records:
+        decoded_username = decode_base64_value(record.auth_username)
+        decoded_password = decode_base64_value(record.auth_password)
+        if not decoded_username and not decoded_password:
+            continue
+        details = []
+        if decoded_username:
+            details.append(f"username={decoded_username}")
+        if decoded_password:
+            details.append(f"password={decoded_password}")
+        findings.append(make_finding(
+            "SMTP AUTH credentials observed",
+            "secret",
+            85,
+            [f"frame {record.frame_number}: SMTP AUTH " + " ".join(details)],
+            "SMTP AUTH credential material was decoded from plaintext mail authentication fields.",
+            f"Inspect tcp.stream == {record.stream_id} and confirm account context." if record.stream_id else f"Inspect frame {record.frame_number} and nearby SMTP packets.",
+            record.src_ip,
+            record.dst_ip,
+            related=decoded_username or record.auth_username or f"frame {record.frame_number}",
+            stream=record.stream_id,
+        ))
     for source, text in email_clue_rows(strings)[:10]:
         findings.append(make_finding(
             "Email clue found",
@@ -851,6 +874,22 @@ def unusual_port_findings(flows: list[FlowRecord]) -> list[Finding]:
 
 
 def icmp_findings(packets: list[PacketRecord]) -> list[Finding]:
+    banner_hits = []
+    for packet in packets:
+        if packet.transport != "ICMP" or not packet.payload_hex:
+            continue
+        preview = payload_text(packet.payload_hex)
+        if has_protocol_banner(preview):
+            banner_hits.append(f"frame {packet.frame_number}: {truncate(preview, 120)}")
+    if banner_hits:
+        return [make_finding(
+            "Protocol banner inside ICMP payload",
+            "icmp",
+            80,
+            banner_hits[:10],
+            "Application protocol text inside ICMP payloads can indicate tunneling or covert-channel traffic.",
+            "Inspect the listed ICMP frames and reconstruct payload order if needed.",
+        )]
     count = sum(1 for p in packets if p.transport == "ICMP")
     payload = sum(1 for p in packets if p.transport == "ICMP" and p.payload_hex)
     if count and payload:
@@ -863,6 +902,18 @@ def icmp_findings(packets: list[PacketRecord]) -> list[Finding]:
             "Inspect ICMP packets and payload strings.",
         )]
     return []
+
+
+def payload_text(payload_hex: str) -> str:
+    try:
+        return bytes.fromhex(payload_hex.replace(":", "")).decode("utf-8", errors="ignore")
+    except ValueError:
+        return ""
+
+
+def has_protocol_banner(text: str) -> bool:
+    lowered = text.lower()
+    return any(token in lowered for token in ["ssh-", "openssh", "http/", "ftp ", "smtp", "ptunnel"])
 
 
 def syn_payload_findings(packets: list[PacketRecord]) -> list[Finding]:
@@ -1013,6 +1064,8 @@ def build_timeline(report: AnalysisReport) -> list[TimelineEvent]:
     for finding in sorted(report.findings, key=lambda f: f.risk_score, reverse=True)[:20]:
         linked = [evidence_by_id[eid] for eid in finding.evidence_ids if eid in evidence_by_id]
         timestamp = first_known_timestamp(linked)
+        if skip_default_timeline_event(finding, linked, timestamp):
+            continue
         detail = first_timeline_detail(linked) or "; ".join(finding.evidence[:1])
         events.append(TimelineEvent(timestamp, finding.title, detail, finding.severity))
     return sorted(events, key=timeline_sort_key)
@@ -1036,6 +1089,17 @@ def timeline_sort_key(event: TimelineEvent) -> tuple[int, float, str]:
     if event.timestamp is None:
         return (1, math.inf, event.title)
     return (0, event.timestamp, event.title)
+
+
+def skip_default_timeline_event(finding: Finding, linked: list, timestamp: float | None) -> bool:
+    if timestamp is not None:
+        return False
+    title = finding.title.lower()
+    if finding.category == "ctf" and ("encoded-looking" in title or "decoded-looking" in title or "possible clue" in title):
+        return True
+    if "email clue" in title and not any(item.frame_start or item.stream_id for item in linked):
+        return True
+    return False
 
 
 def add_capture_notes(report: AnalysisReport, packets: list[PacketRecord]) -> None:

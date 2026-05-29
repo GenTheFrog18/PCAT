@@ -86,7 +86,7 @@ Those folders are ignored by git through `*-pcat/`. Raw PCAP byte artifact extra
 
 ### No Redaction By Default
 
-PCAT is used for investigation, so the current implementation does not hide evidence by default. This means reports may contain passwords, tokens, private hostnames, internal URLs, uploaded content, or challenge flags. Redaction controls are planned but not implemented yet.
+PCAT is used for investigation, so the current implementation does not hide evidence by default. This means reports may contain passwords, tokens, private hostnames, internal URLs, uploaded content, or challenge flags. Redaction behavior is planned but not implemented yet; `--redact` exits with an unsupported-feature error instead of pretending to redact.
 
 ## Implemented Architecture
 

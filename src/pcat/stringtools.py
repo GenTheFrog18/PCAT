@@ -116,12 +116,36 @@ def detect_flags(rows: list[tuple[str, str]], custom_template: str = "") -> list
     if custom_template:
         patterns.insert(0, custom_flag_regex(custom_template))
     hits = []
+    seen = set()
     for source, text in rows:
-        for pattern in patterns:
-            if re.search(pattern, text, flags=re.IGNORECASE):
-                hits.append((source, text))
-                break
+        match_text = flag_match_text(text, patterns)
+        if match_text:
+            key = (source, match_text)
+            if key not in seen:
+                seen.add(key)
+                hits.append((source, match_text))
     return hits
+
+
+def flag_match_text(text: str, patterns: list[str]) -> str:
+    for candidate in flag_candidates(text):
+        matches: list[tuple[int, int, str]] = []
+        for pattern in patterns:
+            for match in re.finditer(pattern, candidate, flags=re.IGNORECASE):
+                matched = match.group(0)
+                matches.append((match.start(), -len(matched), matched))
+        if matches:
+            return sorted(matches)[0][2]
+    return ""
+
+
+def flag_candidates(text: str) -> list[str]:
+    candidates = [text]
+    if "{" in text and "}" in text:
+        compact = re.sub(r"[\s\x00]+", "", text)
+        if compact != text:
+            candidates.append(compact)
+    return candidates
 
 
 def detect_credentials(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -156,6 +180,20 @@ def decode_interesting(text: str) -> list[str]:
     if "base85" in text.lower() or "b85" in text.lower():
         decoded.extend(decode_base85_near_hint(text))
     return decoded
+
+
+def decode_base64_value(value: str) -> str:
+    token = value.strip()
+    if not token:
+        return ""
+    try:
+        raw = base64.b64decode(pad_base64(token), validate=True)
+    except Exception:
+        return ""
+    decoded = raw.decode("utf-8", errors="ignore").strip()
+    if is_useful_decoded_text(decoded):
+        return decoded
+    return ""
 
 
 def clean_base64_tokens(text: str) -> list[str]:
