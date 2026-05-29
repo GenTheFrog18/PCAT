@@ -4,6 +4,8 @@
 ![Version 0.2.4.1](https://img.shields.io/badge/version-0.2.4.1-1f6e67)
 ![Status](https://img.shields.io/badge/status-active%20prototype-c79a27)
 
+# Hi ges, readme ini sementara, besok kubuatin yang ril
+
 PCAT is an offline command-line tool for first-pass packet capture analysis. It accepts captures that TShark/Wireshark can parse, including `.pcap`, `.pcapng`, `.cap`, `.pcap.gz`, and valid captures with unusual extensions.
 
 PCAT is built for general network triage and CTF workflows where the first questions are:
