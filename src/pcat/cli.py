@@ -52,9 +52,9 @@ class PCATFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescript
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv if argv is not None else sys.argv[1:])
-    simple_help_command = simple_help_command_from_args(argv)
-    if simple_help_command is not None:
-        print_simple_help(simple_help_command)
+    short_help_command = short_help_command_from_args(argv)
+    if short_help_command is not None:
+        print_short_help(short_help_command)
         return 0
     argv = normalize_help_args(argv)
     parser = build_parser()
@@ -94,23 +94,23 @@ def normalize_help_args(argv: list[str]) -> list[str]:
     return argv
 
 
-def simple_help_command_from_args(argv: list[str]) -> str | None:
-    """Return the command requested by --help-simple, or "" for global help."""
+def short_help_command_from_args(argv: list[str]) -> str | None:
+    """Return the command requested by --help-short, or "" for global help."""
     if not argv:
         return None
-    if argv[0] == "help-simple":
+    if argv[0] == "help-short":
         return argv[1] if len(argv) > 1 else ""
-    if "--help-simple" not in argv:
+    if "--help-short" not in argv:
         return None
-    idx = argv.index("--help-simple")
+    idx = argv.index("--help-short")
     if idx == 0:
         return argv[1] if len(argv) > 1 and not argv[1].startswith("-") else ""
     return argv[0] if argv[0] not in {"-h", "--help"} else ""
 
 
-def print_simple_help(command: str) -> None:
+def print_short_help(command: str) -> None:
     if not command:
-        print("""PCAT quick help
+        print("""PCAT short help
 Usage:
   pcat analyze -i capture.pcap
   pcat summary -i capture.pcap
@@ -134,13 +134,13 @@ Common commands:
 
 More help:
   pcat <command> --help
-  pcat <command> --help-simple
+  pcat <command> --help-short
 """)
         return
 
-    simple = SIMPLE_COMMAND_HELP.get(command)
-    if simple:
-        print(simple)
+    short = SHORT_COMMAND_HELP.get(command)
+    if short:
+        print(short)
         return
     if command in HIDDEN_COMPAT_COMMANDS:
         print(f"""pcat {command}
@@ -152,10 +152,10 @@ Preferred commands:
   pcat evidence -i capture.pcap --type tftp_transfer --json
 """)
         return
-    print(f"Unknown command for simple help: {command}", file=sys.stderr)
+    print(f"Unknown command for short help: {command}", file=sys.stderr)
 
 
-SIMPLE_COMMAND_HELP = {
+SHORT_COMMAND_HELP = {
     "analyze": """pcat analyze
 Run the full triage pipeline and optionally write reports.
 
@@ -352,8 +352,8 @@ Command help:
   pcat analyze -h
   pcat -h analyze
   pcat help analyze
-  pcat --help-simple
-  pcat extract --help-simple
+  pcat --help-short
+  pcat extract --help-short
 """,
     )
     parser.add_argument("--version", action="version", version=f"PCAT {PCAT_VERSION}")

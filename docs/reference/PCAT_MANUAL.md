@@ -121,8 +121,8 @@ pcat -h
 pcat analyze -h
 pcat -h analyze
 pcat help analyze
-pcat --help-simple
-pcat extract --help-simple
+pcat --help-short
+pcat extract --help-short
 ```
 
 ## `pcat analyze`

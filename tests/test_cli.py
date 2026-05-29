@@ -22,13 +22,13 @@ def test_cli_help_hides_compatibility_commands(capsys):
     assert "artifacts" in output
 
 
-def test_simple_help_global_and_command(capsys):
-    assert main(["--help-simple"]) == 0
+def test_short_help_global_and_command(capsys):
+    assert main(["--help-short"]) == 0
     output = capsys.readouterr().out
-    assert "PCAT quick help" in output
+    assert "PCAT short help" in output
     assert "extract" in output
 
-    assert main(["extract", "--help-simple"]) == 0
+    assert main(["extract", "--help-short"]) == 0
     output = capsys.readouterr().out
     assert "pcat extract" in output
     assert "--tftp" in output
@@ -36,8 +36,8 @@ def test_simple_help_global_and_command(capsys):
     assert "--no-payloads" not in output
 
 
-def test_simple_help_before_command(capsys):
-    assert main(["--help-simple", "evidence"]) == 0
+def test_short_help_before_command(capsys):
+    assert main(["--help-short", "evidence"]) == 0
     output = capsys.readouterr().out
     assert "pcat evidence" in output
     assert "--type TYPE" in output

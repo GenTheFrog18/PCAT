@@ -639,11 +639,11 @@ Implemented in tool version `0.2.4.1`. Report schema remains `0.2.4` because the
 Decisions:
 
 - Keep `--help` as the complete public help surface.
-- Add `--help-simple` for workflow-oriented help:
-  - `pcat --help-simple`
-  - `pcat <command> --help-simple`
-  - `pcat --help-simple <command>`
-  - `pcat help-simple <command>`
+- Add `--help-short` for workflow-oriented help:
+  - `pcat --help-short`
+  - `pcat <command> --help-short`
+  - `pcat --help-short <command>`
+  - `pcat help-short <command>`
 - Hide compatibility aliases from normal global help:
   - `pcat files`
   - `pcat suspicious`

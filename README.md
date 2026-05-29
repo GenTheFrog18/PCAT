@@ -117,8 +117,8 @@ Generated reports and artifacts are written under `<pcap-file-name>-pcat/<pcap-s
 For shorter help output:
 
 ```bash
-pcat --help-simple
-pcat extract --help-simple
+pcat --help-short
+pcat extract --help-short
 ```
 
 For full command help:
