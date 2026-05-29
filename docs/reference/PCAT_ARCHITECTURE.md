@@ -117,7 +117,7 @@ The full `analyze` pipeline works like this:
 2. Build capture metadata with local file data, `capinfos`, and TShark protocol hierarchy when available.
 3. Parse packet fields through TShark.
 4. Normalize packets into `PacketRecord`.
-5. Build summaries, flows, streams, DNS records, HTTP records, SMTP records, MQTT records, payload maps, strings, and artifact candidates.
+5. Build summaries, flows, streams, DNS records, HTTP records, SMTP records, MQTT records, TFTP records/transfers, payload maps, strings, and artifact candidates.
 6. Run detectors to produce findings.
 7. Optionally run ML anomaly scoring if dependencies and data are available.
 8. Score streams and artifacts.
@@ -129,7 +129,7 @@ The full `analyze` pipeline works like this:
 
 ## Primary Data Model
 
-The schema version is currently `0.2.3`.
+The schema version is currently `0.2.4`.
 
 Implemented model groups:
 
@@ -137,8 +137,8 @@ Implemented model groups:
 - `ToolRun`: optional tool status, version, command, and error.
 - `PacketRecord`: normalized packet fields from TShark.
 - `FlowRecord`: bidirectional host/port/protocol conversation summary.
-- `StreamRecord`: TCP stream/conversation summary when stream IDs exist.
-- `DnsRecord`, `HttpRecord`, `SmtpRecord`, `MqttRecord`: protocol-specific records.
+- `StreamRecord`: TCP stream and UDP conversation summary.
+- `DnsRecord`, `HttpRecord`, `SmtpRecord`, `MqttRecord`, `TftpRecord`, `TftpTransferRecord`: protocol-specific records.
 - `ArtifactRecord`: file signature, certainty, validation, score, extraction, hash, and manifest metadata.
 - `EvidenceRecord`: normalized evidence with stable ID, source module, confidence, anchors, preview, fields, and handoff filters.
 - `EvidenceStory`: grouped analyst narrative linked to supporting evidence.
@@ -210,6 +210,7 @@ Implemented magic-byte signatures:
 - RAR.
 - 7z.
 - ELF.
+- PE/MZ.
 - BMP.
 - SQLite.
 
@@ -224,6 +225,7 @@ Implemented artifact behavior:
 - Add file type metadata when the local `file` command is available.
 - Record ZIP members, encryption, and macro-related names when present.
 - Write `artifacts/manifest.json`.
+- Detect and rank PE/MZ executable candidates.
 
 ## Output Philosophy
 
@@ -243,17 +245,18 @@ Current command surface:
 
 - `analyze`: full triage pipeline.
 - `summary`: capture summary.
-- `streams`: stream/conversation view.
+- `streams`: TCP stream and UDP conversation view.
 - `dns`: DNS-focused view.
 - `http`: HTTP-focused view.
+- `tftp`: TFTP transfer view and best-effort export.
 - `evidence`: structured evidence records.
 - `timeline`: chronological finding/evidence view.
 - `strings`: printable strings from raw bytes and payloads.
-- `search`: string search.
-- `files`: magic-byte file signature detection.
+- `search`: global evidence search across strings, decoded values, protocols, evidence, findings, and artifacts.
+- `files`: deprecated compatibility alias for artifact detection.
 - `artifacts`: artifact manager view.
 - `extract`: artifact extraction and manifest writing.
-- `suspicious`: suspicious artifact ranking.
+- `suspicious`: deprecated compatibility alias for suspicious artifact ranking.
 - `hunt`: CTF-oriented hunt.
 - `doctor`: environment and dependency check.
 
@@ -308,15 +311,13 @@ Implemented PCAT still has boundaries:
 
 Planned work should remain separate from implemented behavior in documentation and reports.
 
-### V2.4 Protocol Views And Reassembly
+### Future Protocol Workflow
 
 Planned:
 
 - DNS clustering and encoded-label grouping.
-- HTTP stream/object grouping and clearer object export accounting.
+- HTTP stream/object grouping and short-response ranking.
 - MQTT topic/message/payload table and export.
-- TFTP transfer grouping and object export with completeness metadata.
-- UDP conversation ranking for non-TCP workflows.
 - ICMP trail summaries with payload/covert-channel hints.
 
 ### Later Integration Layer
@@ -349,7 +350,6 @@ Planned:
 Planned:
 
 - Full stream reassembly workflow.
-- TFTP object reassembly/export.
 - MQTT payload view/export.
 - DNS encoded-label grouping.
 - USB/HID keyboard triage or precise handoff.

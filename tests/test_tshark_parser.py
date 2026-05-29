@@ -101,6 +101,37 @@ def test_parse_packets_combines_dns_answer_fields(monkeypatch, tmp_path):
     assert packet.dns_rcode == "0"
 
 
+def test_parse_packets_tftp_fields(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        parser,
+        "run_tshark_fields",
+        lambda path: tshark_output(
+            {
+                "frame.number": "12",
+                "frame.time_epoch": "4.0",
+                "frame.len": "90",
+                "frame.protocols": "eth:ip:udp:tftp",
+                "_ws.col.Protocol": "TFTP",
+                "ip.src": "10.0.0.2",
+                "ip.dst": "10.0.0.3",
+                "udp.srcport": "49152",
+                "udp.dstport": "69",
+                "tftp.opcode": "1",
+                "tftp.source_file": "firmware.bin",
+                "tftp.request_frame": "12",
+                "tftp.type": "octet",
+            }
+        ),
+    )
+    sample = tmp_path / "tftp.pcap"
+    sample.write_bytes(b"not real")
+    packet = parser.parse_packets(sample)[0]
+    assert packet.protocol == "TFTP"
+    assert packet.transport == "UDP"
+    assert packet.tftp_opcode == "1"
+    assert packet.tftp_source_file == "firmware.bin"
+
+
 def test_run_tshark_fields_adds_input_class_guidance(monkeypatch, tmp_path):
     monkeypatch.setattr(parser, "require_tshark", lambda: "tshark")
 

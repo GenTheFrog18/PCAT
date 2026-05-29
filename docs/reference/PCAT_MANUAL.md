@@ -72,7 +72,7 @@ V2 adds evidence-first output and safer workspace behavior:
 - `report.json` contains a schema version, capture metadata, tools, summary, briefing, stories, hosts, conversations, streams, evidence, artifacts, findings, timeline, handoff, warnings, and errors.
 - `evidence.json` contains normalized evidence records with stable IDs, confidence, frame/stream anchors, previews, and handoff filters.
 - `stories.json` contains grouped evidence stories for analyst-first review.
-- CSV export writes `flows.csv`, `hosts.csv`, `dns.csv`, `http.csv`, `artifacts.csv`, and `findings.csv`.
+- CSV export writes `flows.csv`, `hosts.csv`, `dns.csv`, `http.csv`, `tftp.csv`, `artifacts.csv`, and `findings.csv`.
 - Artifact extraction writes `artifacts/manifest.json`.
 - Raw PCAP byte carving is opt-in for extraction because it is noisy; payload artifacts remain the default extraction target.
 - Large TShark fields should not crash normal parsing.
@@ -99,17 +99,18 @@ Expected exit codes:
 ```bash
 pcat analyze     # Full triage analysis
 pcat summary     # Quick capture summary
-pcat streams     # Ranked TCP stream/conversation view
+pcat streams     # Ranked TCP streams and UDP conversations
 pcat dns         # DNS-focused view
 pcat http        # HTTP-focused view
+pcat tftp        # TFTP transfer view/export
 pcat evidence    # Structured V2 evidence records
 pcat timeline    # Chronological findings/evidence view
 pcat strings     # Extract printable strings
-pcat search      # Search extracted strings
-pcat files       # Detect embedded file signatures
+pcat search      # Search strings, decoded values, protocols, evidence, findings, and artifacts
+pcat files       # Deprecated alias for artifact detection
 pcat artifacts   # Artifact manager view
 pcat extract     # Carve/extract detected artifacts
-pcat suspicious  # Rank suspicious artifact hits
+pcat suspicious  # Deprecated alias for suspicious artifact ranking
 pcat hunt        # CTF-oriented automatic hunt
 pcat doctor      # Dependency and environment check
 ```
@@ -210,6 +211,7 @@ flows.csv
 hosts.csv
 dns.csv
 http.csv
+tftp.csv
 artifacts.csv
 findings.csv
 ```
@@ -228,6 +230,7 @@ flows.csv
 hosts.csv
 dns.csv
 http.csv
+tftp.csv
 artifacts.csv
 findings.csv
 ```
@@ -274,7 +277,7 @@ Things to test:
 
 ## `pcat streams`
 
-Shows ranked TCP streams/conversations when `tshark` exposes stream IDs.
+Shows ranked TCP streams and UDP conversations. TCP rows use `tcp.stream` IDs when TShark exposes them. UDP rows are grouped by normalized endpoints and protocol so UDP-heavy captures, including DNS and TFTP, are no longer invisible in the stream view.
 
 ```bash
 pcat streams -i capture.pcap
@@ -282,8 +285,9 @@ pcat streams -i capture.pcap
 
 Expected output:
 
-- `tcp.stream` ID.
+- `tcp.stream` ID or UDP conversation ID.
 - Source and destination.
+- Protocol.
 - Packet count.
 - Byte count.
 - Interest score.
@@ -295,7 +299,7 @@ Useful option:
 Things to test:
 
 - PCAP with TCP streams.
-- PCAP with few/no TCP streams.
+- PCAP with few/no TCP streams but UDP traffic.
 - Large stream/file download traffic.
 
 ## `pcat dns`
@@ -347,6 +351,44 @@ Things to test:
 - PCAP with file downloads.
 - PCAP with no HTTP.
 
+## `pcat tftp`
+
+Shows TFTP request/data/error packets grouped into file-transfer records. This is useful for firmware, boot image, config, and CTF captures that move data over UDP instead of TCP streams.
+
+```bash
+pcat tftp -i capture.pcap
+pcat tftp -i capture.pcap --json
+pcat tftp -i capture.pcap --export -o case-output
+```
+
+Useful options:
+
+- `--export`: write recoverable TFTP objects to `<out>/tftp_objects/`.
+- `--include-incomplete`: export transfers with bytes even when completeness is `unknown`, `incomplete`, or `error`.
+- `--top N`, `--limit N`: display/export limit, default `50`.
+- `-o, --out PATH`: output folder used with `--export`.
+- `--force`: allow existing output folder.
+- `--json`: emit packet records, transfer records, and export summary.
+
+Expected output:
+
+- Transfer ID.
+- Filename when present in RRQ/WRQ metadata.
+- Direction: `download`, `upload`, or `unknown`.
+- Client and server IP.
+- Request frame.
+- Block count.
+- Byte count.
+- Completeness: `complete`, `unknown`, `incomplete`, `metadata_only`, or `error`.
+- Export path and SHA256 when `--export` writes a file.
+
+Things to test:
+
+- TFTP read request with a complete transfer.
+- TFTP transfer where data is present but no final short block is visible.
+- TFTP error packet.
+- `--export` with and without `--include-incomplete`.
+
 ## `pcat evidence`
 
 Shows normalized V2 evidence records.
@@ -360,7 +402,7 @@ pcat evidence -i capture.pcap --json
 Expected output:
 
 - Stable evidence ID.
-- Evidence type, such as `flow`, `stream`, `dns_query`, `http_request`, `smtp_auth_credential`, `artifact_signature`, `payload_string`, or `syn_payload`.
+- Evidence type, such as `flow`, `stream`, `udp_conversation`, `dns_query`, `http_request`, `smtp_auth_credential`, `tftp_transfer`, `artifact_signature`, `payload_string`, or `syn_payload`.
 - Confidence level.
 - Frame or stream anchor when available.
 - Preview text.
@@ -431,7 +473,7 @@ Things to test:
 
 ## `pcat search`
 
-Searches extracted strings by keyword or regex.
+Searches PCAT's evidence index by keyword or regex. The default scope is `all`, which searches strings, decoded values, protocol records, evidence records, findings, and artifacts. Use a narrower `--scope` when you want faster or more targeted output.
 
 Keyword search:
 
@@ -445,13 +487,20 @@ Regex search:
 pcat search -i capture.pcap "flag\\{.*\\}" --regex
 ```
 
+Protocol-only search:
+
+```bash
+pcat search -i capture.pcap firmware --scope protocols
+```
+
 Useful options:
 
 - `--regex`: treat keyword as regex.
 - `--ignore-case`: case-insensitive match.
+- `--scope all|strings|decoded|evidence|protocols|artifacts|findings`: choose search scope.
 - `--min N`: minimum string length.
 - `--limit N`: display limit.
-- `--source all|raw|packet`: choose the same source behavior used by `strings`.
+- `--source all|raw|packet`: choose source behavior for string-backed scopes.
 - `--no-raw`: skip raw PCAP byte scanning.
 - `--no-payloads`: skip packet payload scanning.
 
@@ -460,12 +509,13 @@ Things to test:
 - Literal keyword that exists.
 - Literal keyword that does not exist.
 - Regex match.
+- Protocol metadata match, for example TFTP filename or HTTP host.
 - Invalid regex behavior.
 - Invalid regex should fail with exit code `2`.
 
 ## `pcat files`
 
-Detects embedded file signatures using magic bytes.
+Deprecated compatibility alias for artifact listing. It detects embedded file signatures using magic bytes and keeps the older raw-scan default, but new workflows should use `pcat artifacts`.
 
 ```bash
 pcat files -i capture.pcap
@@ -488,6 +538,7 @@ Detected signatures in V2:
 - RAR.
 - 7z.
 - ELF.
+- PE/MZ.
 - BMP.
 - SQLite.
 
@@ -510,11 +561,13 @@ Things to test:
 
 ## `pcat artifacts`
 
-Shows the V2 artifact manager view without writing files.
+Shows the consolidated artifact manager view without writing files.
 
 ```bash
 pcat artifacts -i capture.pcap
 pcat artifacts -i capture.pcap --include-raw --top 100
+pcat artifacts -i capture.pcap --type pe,zip --min-score 40
+pcat artifacts -i capture.pcap --suspicious --extractable
 pcat artifacts -i capture.pcap --json
 ```
 
@@ -524,6 +577,11 @@ Useful options:
 
 - `--include-raw`: include raw PCAP byte hits.
 - `--no-payloads`: skip packet payload scanning.
+- `--type LIST`: comma-separated artifact types such as `pe,zip,pdf`.
+- `--min-score N`: minimum artifact score.
+- `--extractable`: only show artifacts PCAT would select for extraction.
+- `--show-rejected`: include rejected hits in text output.
+- `--suspicious`: apply suspicious-artifact ranking defaults.
 - `--limit N`, `--top N`: display limit.
 - `--json`: emit machine-readable artifact records.
 
@@ -577,7 +635,7 @@ Things to test:
 
 ## `pcat suspicious`
 
-Ranks detected artifact/file signatures by investigation value.
+Deprecated compatibility alias for `pcat artifacts --suspicious`. It ranks detected artifact/file signatures by investigation value and keeps the older option names for scripts.
 
 ```bash
 pcat suspicious -i capture.pcap
@@ -637,6 +695,7 @@ Expected sections:
 - HTTP object / transfer clues.
 - SMTP records.
 - MQTT records.
+- TFTP transfers.
 - ICMP payload clues.
 - SYN payload candidates.
 - Detected files.
@@ -650,6 +709,7 @@ Things to test:
 - PCAP with short base64 fragments split across packets.
 - PCAP with TCP SYN packets carrying payload.
 - PCAP with SMTP or MQTT traffic.
+- PCAP with TFTP traffic.
 - PCAP with embedded files.
 - PCAP with no obvious CTF evidence.
 
@@ -681,11 +741,12 @@ Use different PCAPs if available:
 | HTTP POST | `http`, `analyze` | HTTP POST finding |
 | SMTP email | `hunt`, `search` | Email clues, URLs, or password-like lines appear |
 | MQTT traffic | `hunt`, `analyze` | MQTT topics/messages appear |
+| TFTP transfer | `tftp`, `streams`, `hunt`, `analyze` | TFTP transfer metadata appears; export writes recoverable complete objects |
 | SYN payloads | `hunt`, `analyze` | SYN payload candidate appears |
 | Port scan | `analyze` | Scan/recon finding |
 | CTF flag | `strings`, `search`, `hunt` | Flag-like string appears |
 | Credentials | `strings`, `hunt`, `analyze` | Credential-like finding |
-| Embedded file | `files`, `suspicious`, `extract` | File signature and extracted artifact |
+| Embedded file | `artifacts`, `extract` | File signature and extracted artifact |
 | Evidence output | `evidence --json`, `analyze --json` | Stable evidence IDs and schema version appear |
 | Artifact manifest | `extract` | `artifacts/manifest.json` is written |
 | Large HTTP/multipart | `summary`, `http`, `hunt`, `analyze` | No CSV field-size crash |
@@ -707,7 +768,8 @@ pcat timeline -i sample.pcap
 pcat strings -i sample.pcap --grep flag --ignore-case
 pcat search -i sample.pcap password --ignore-case
 pcat artifacts -i sample.pcap
-pcat suspicious -i sample.pcap
+pcat artifacts -i sample.pcap --suspicious
+pcat tftp -i sample.pcap
 pcat hunt -i sample.pcap
 pcat analyze -i sample.pcap --ctf --extract -f html,json,csv,md,txt
 ```
@@ -727,7 +789,7 @@ find sample.pcap-pcat/sample -maxdepth 2 -type f | sort
 - Artifact `candidate` records are leads; check completeness/truncation/source-scope fields before trusting them.
 - Raw-file artifact hits are noisier than packet-payload hits; check validation before trusting them.
 - Timeline events without linked timestamps are explicitly shown as unknown.
-- Full stream reassembly, TFTP export, MQTT payload export, USB HID decoding, and deeper CTF decoder hints are planned improvements.
+- Full TCP stream reassembly, MQTT payload export, USB HID decoding, and deeper CTF decoder hints are planned improvements.
 - Some protocol fields may not appear depending on the PCAP and `tshark` version.
 - Zeek and Suricata orchestration are planned for a later integration milestone, not required for the V2 baseline.
 - No redaction by default.

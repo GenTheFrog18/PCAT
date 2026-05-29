@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any
 
 
-SCHEMA_VERSION = "0.2.3"
+SCHEMA_VERSION = "0.2.4"
 
 
 @dataclass
@@ -110,6 +110,18 @@ class PacketRecord:
     mqtt_message: str = ""
     mqtt_username: str = ""
     mqtt_password: str = ""
+    tftp_opcode: str = ""
+    tftp_source_file: str = ""
+    tftp_destination_file: str = ""
+    tftp_request_frame: str = ""
+    tftp_type: str = ""
+    tftp_block: str = ""
+    tftp_block_full: str = ""
+    tftp_error_code: str = ""
+    tftp_error_message: str = ""
+    tftp_data: str = ""
+    tftp_reassembled_data: str = ""
+    tftp_reassembled_length: str = ""
 
 
 @dataclass
@@ -147,6 +159,10 @@ class StreamRecord:
     start_time: float = 0.0
     end_time: float = 0.0
     preview: str = ""
+    kind: str = "tcp_stream"
+    conversation_id: str = ""
+    frame_start: int | None = None
+    frame_end: int | None = None
     tags: list[str] = field(default_factory=list)
     interest_score: int = 0
 
@@ -211,6 +227,48 @@ class MqttRecord:
     username: str = ""
     password: str = ""
     stream_id: str = ""
+
+
+@dataclass
+class TftpRecord:
+    frame_number: int
+    timestamp: float
+    src_ip: str
+    dst_ip: str
+    src_port: str = ""
+    dst_port: str = ""
+    opcode: str = ""
+    source_file: str = ""
+    destination_file: str = ""
+    request_frame: str = ""
+    transfer_type: str = ""
+    block: str = ""
+    block_full: str = ""
+    error_code: str = ""
+    error_message: str = ""
+    data: str = ""
+    reassembled_data: str = ""
+    reassembled_length: str = ""
+
+
+@dataclass
+class TftpTransferRecord:
+    transfer_id: str
+    filename: str
+    direction: str
+    client_ip: str
+    server_ip: str
+    request_frame: int | None = None
+    start_time: float = 0.0
+    end_time: float = 0.0
+    block_count: int = 0
+    byte_count: int = 0
+    completeness: str = "unknown"
+    mode: str = ""
+    data_frames: list[int] = field(default_factory=list)
+    error: str = ""
+    export_path: str = ""
+    sha256: str = ""
 
 
 @dataclass
@@ -351,6 +409,8 @@ class AnalysisReport:
     http_records: list[HttpRecord] = field(default_factory=list)
     smtp_records: list[SmtpRecord] = field(default_factory=list)
     mqtt_records: list[MqttRecord] = field(default_factory=list)
+    tftp_records: list[TftpRecord] = field(default_factory=list)
+    tftp_transfers: list[TftpTransferRecord] = field(default_factory=list)
     artifacts: list[ArtifactRecord] = field(default_factory=list)
     timeline: list[TimelineEvent] = field(default_factory=list)
     handoff: list[HandoffHint] = field(default_factory=list)

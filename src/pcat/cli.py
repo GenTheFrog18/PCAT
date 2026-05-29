@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import re
@@ -12,11 +13,14 @@ from pathlib import Path
 from .analysis import (
     AnalyzeOptions,
     analyze,
+    build_tftp_records,
+    build_tftp_transfers,
     clue_rows,
     decoded_payload_fragments,
     email_clue_rows,
     gather_strings,
     payload_sources,
+    tftp_reconstructed_bytes,
 )
 from .artifacts import artifact_is_extractable, detect_artifacts, extract_artifacts, score_artifact, write_artifact_manifest
 from .evidence import build_report_evidence
@@ -101,7 +105,7 @@ Command help:
   pcat help analyze
 """,
     )
-    parser.add_argument("--version", action="version", version="PCAT 0.2.3")
+    parser.add_argument("--version", action="version", version="PCAT 0.2.4")
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", title="commands")
 
     add_analyze(sub)
@@ -109,6 +113,7 @@ Command help:
     add_streams(sub)
     add_dns(sub)
     add_http(sub)
+    add_tftp(sub)
     add_evidence(sub)
     add_timeline(sub)
     add_strings(sub)
@@ -241,6 +246,26 @@ def add_http(sub) -> None:
     p.set_defaults(func=cmd_http)
 
 
+def add_tftp(sub) -> None:
+    p = sub.add_parser(
+        "tftp",
+        help="Show and export TFTP transfers",
+        description="Group TFTP request/data/error packets into transfer records and optionally export recoverable payloads.",
+        formatter_class=PCATFormatter,
+        epilog="""Examples:
+  pcat tftp -i capture.pcap
+  pcat tftp capture.pcap --json
+  pcat tftp -i capture.pcap --export -o pcat/tftp-case
+""",
+    )
+    add_common(p)
+    add_output(p)
+    p.add_argument("--export", action="store_true", help="Write recoverable TFTP objects to <out>/tftp_objects/")
+    p.add_argument("--include-incomplete", action="store_true", help="Export incomplete or unknown-completeness transfers when bytes are available")
+    p.add_argument("--top", "--limit", dest="top", type=int, default=50, metavar="N", help="Number of TFTP transfers to display or export")
+    p.set_defaults(func=cmd_tftp)
+
+
 def add_evidence(sub) -> None:
     p = sub.add_parser(
         "evidence",
@@ -301,19 +326,22 @@ def add_strings(sub) -> None:
 def add_search(sub) -> None:
     p = sub.add_parser(
         "search",
-        help="Search extracted strings by keyword or regex",
-        description="Search strings extracted from raw PCAP bytes and packet payloads.",
+        help="Search strings, decoded values, evidence, protocols, findings, and artifacts",
+        description="Search PCAT's evidence index. By default this includes strings, decoded strings, protocol records, evidence, findings, and artifacts.",
         formatter_class=PCATFormatter,
         epilog="""Examples:
   pcat search -i capture.pcap password
   pcat search -i capture.pcap "flag\\{.*\\}" --regex
   pcat search capture.pcap token --ignore-case --limit 50
+  pcat search -i capture.pcap firmware --scope protocols
+  pcat search -i capture.pcap tftp --scope evidence --json
 """,
     )
     add_common(p)
     p.add_argument("keyword", metavar="KEYWORD", help="Keyword to search for, or regex pattern when --regex is used")
     p.add_argument("--regex", action="store_true", help="Treat KEYWORD as a regular expression")
     p.add_argument("--ignore-case", action="store_true", help="Use case-insensitive matching")
+    p.add_argument("--scope", choices=["all", "strings", "decoded", "evidence", "protocols", "artifacts", "findings"], default="all", help="Evidence scope to search")
     p.add_argument("--min", type=int, default=5, dest="min_len", metavar="N", help="Minimum printable string length before searching")
     p.add_argument("--limit", "--top", dest="limit", type=int, default=100, metavar="N", help="Maximum matches to print")
     p.add_argument("--source", choices=["all", "raw", "packet"], default="all", help="String source to search. all uses enabled raw and packet-payload sources.")
@@ -325,8 +353,8 @@ def add_search(sub) -> None:
 def add_files(sub) -> None:
     p = sub.add_parser(
         "files",
-        help="Detect embedded files by magic bytes",
-        description="Detect common embedded file signatures such as PNG, JPG, GIF, PDF, ZIP, gzip, RAR, 7z, ELF, BMP, and SQLite.",
+        help="Deprecated alias for artifact detection",
+        description="Compatibility alias for artifact listing. Prefer `pcat artifacts`; this command keeps old raw-scan defaults for scripts.",
         formatter_class=PCATFormatter,
         epilog="""Examples:
   pcat files -i capture.pcap
@@ -349,11 +377,18 @@ def add_artifacts(sub) -> None:
         epilog="""Examples:
   pcat artifacts -i capture.pcap
   pcat artifacts capture.pcap --include-raw --top 100 --json
+  pcat artifacts -i capture.pcap --type pe,zip --min-score 40
+  pcat artifacts -i capture.pcap --suspicious --extractable
 """,
     )
     add_common(p)
     p.add_argument("--include-raw", action="store_true", help="Include raw PCAP byte scanning in addition to packet payload artifacts")
     p.add_argument("--no-payloads", action="store_true", help="Skip parsed packet payload scanning")
+    p.add_argument("--type", metavar="LIST", help="Comma-separated artifact type filter, for example pe,zip,pdf,png")
+    p.add_argument("--min-score", type=int, default=None, metavar="N", help="Minimum artifact score to display")
+    p.add_argument("--extractable", action="store_true", help="Only show artifacts that PCAT would select for extraction")
+    p.add_argument("--show-rejected", action="store_true", help="Show rejected signature hits in text output")
+    p.add_argument("--suspicious", action="store_true", help="Apply suspicious-artifact ranking defaults")
     p.add_argument("--limit", "--top", dest="limit", type=int, default=50, metavar="N", help="Maximum artifact rows to print")
     p.set_defaults(func=cmd_artifacts)
 
@@ -382,8 +417,8 @@ def add_extract(sub) -> None:
 def add_suspicious(sub) -> None:
     p = sub.add_parser(
         "suspicious",
-        help="Rank suspicious artifact/file hits",
-        description="Rank detected file signatures by investigation value so high-value artifacts can be inspected first.",
+        help="Deprecated alias for suspicious artifact ranking",
+        description="Compatibility alias for `pcat artifacts --suspicious`. Prefer the consolidated artifacts command.",
         formatter_class=PCATFormatter,
         epilog="""Examples:
   pcat suspicious -i capture.pcap
@@ -555,10 +590,16 @@ def cmd_streams(args) -> int:
     print("Streams")
     print("-" * 7)
     if not report.streams:
-        print("No TCP streams found in parsed TShark fields. UDP-only conversations may still appear in summary/evidence.")
+        print("No TCP streams or UDP conversations found in parsed TShark fields.")
         return 0
     for stream in report.streams[: args.top]:
-        print(f"tcp.stream {stream.stream_id}: {stream.src_ip}:{stream.src_port} -> {stream.dst_ip}:{stream.dst_port} packets={stream.packet_count} bytes={stream.byte_count} score={stream.interest_score}")
+        if stream.kind == "udp_conversation":
+            label = stream.conversation_id or "udp"
+            arrow = "<->"
+        else:
+            label = f"tcp.stream {stream.stream_id}"
+            arrow = "->"
+        print(f"{label}: {stream.src_ip}:{stream.src_port} {arrow} {stream.dst_ip}:{stream.dst_port} protocol={stream.protocol} packets={stream.packet_count} bytes={stream.byte_count} score={stream.interest_score}")
     return 0
 
 
@@ -595,6 +636,51 @@ def cmd_http(args) -> int:
         uri = record.full_uri or f"{record.host}{record.uri}"
         length = f" length={record.content_length}" if record.content_length else ""
         print(f"frame={record.frame_number} stream={record.stream_id} {record.method} {uri} status={record.status} type={record.content_type}{length}")
+    return 0
+
+
+def cmd_tftp(args) -> int:
+    path = resolve_input(args)
+    report = analyze(path, AnalyzeOptions(no_ml=True, min_risk=0))
+    export_summary = None
+    if args.export and report.tftp_transfers:
+        out = prepare_output_dir(Path(args.out) if args.out else default_output_dir(path), args.force)
+        export_summary = export_tftp_transfers(report, out / "tftp_objects", args.top, args.include_incomplete)
+    elif args.export:
+        export_summary = {"output_dir": "", "exported": 0, "skipped": 0, "exported_records": [], "skipped_records": [], "status": "no_tftp_transfers"}
+    if args.json:
+        print_json({
+            "schema_version": report.schema_version,
+            "records": report.tftp_records,
+            "transfers": report.tftp_transfers[: args.top],
+            "export": export_summary,
+        })
+        return 0
+    print("TFTP Transfers")
+    print("-" * 14)
+    if not report.tftp_records and not report.tftp_transfers:
+        print("No TFTP records found in parsed TShark fields.")
+        return 0
+    if not report.tftp_transfers:
+        print(f"TFTP packets found: {len(report.tftp_records)}, but PCAT could not group them into transfers.")
+        return 0
+    for transfer in report.tftp_transfers[: args.top]:
+        request = f" request_frame={transfer.request_frame}" if transfer.request_frame else ""
+        exported = f" export={transfer.export_path}" if transfer.export_path else ""
+        print(
+            f"{transfer.transfer_id}: file={transfer.filename or '(unknown)'} direction={transfer.direction} "
+            f"{transfer.client_ip}->{transfer.server_ip}{request} blocks={transfer.block_count} "
+            f"bytes={transfer.byte_count} completeness={transfer.completeness}{exported}"
+        )
+        if transfer.error:
+            print(f"  error={transfer.error}")
+    if export_summary:
+        print("")
+        print("Export Summary")
+        print("-" * 14)
+        print(f"Output: {export_summary['output_dir']}")
+        print(f"Exported: {export_summary['exported']}")
+        print(f"Skipped: {export_summary['skipped']}")
     return 0
 
 
@@ -679,26 +765,28 @@ def cmd_strings(args) -> int:
 
 def cmd_search(args) -> int:
     path = resolve_input(args)
-    include_raw, include_payloads = resolve_string_source_flags(args.source, not args.no_raw, not args.no_payloads)
-    rows = load_strings_for_command(path, args.min_len, include_raw, include_payloads)
-    matches = find_matches(rows, args.keyword, regex=args.regex, ignore_case=args.ignore_case)
+    pattern = compile_search_pattern(args.keyword, args.regex, args.ignore_case)
+    records = build_search_records(path, args)
+    matches = [record for record in records if pattern.search(search_record_haystack(record))]
     if args.json:
-        print_json([{"source": source, "text": text} for source, text in matches[: args.limit]])
+        print_json(matches[: args.limit])
         return 0
     if not matches:
         print("No matches found.")
         return 0
-    for source, text in matches[: args.limit]:
-        print(f"[{source}] {text}")
+    for record in matches[: args.limit]:
+        location = f" {record['location']}" if record.get("location") else ""
+        print(f"[{record['scope']}:{record['type']}] {record['source']}{location} {record['text']}")
     print(f"Displayed {min(len(matches), args.limit)} of {len(matches)} matches.")
     return 0
 
 
 def cmd_files(args) -> int:
+    print_deprecated_alias("files", "artifacts", "--include-raw" if not args.no_raw else "")
     path = resolve_input(args)
     artifacts = load_artifacts_for_command(path, not args.no_raw, not args.no_payloads)
+    ranked = sorted(artifacts, key=lambda a: a.score, reverse=True)
     if args.json:
-        ranked = sorted(artifacts, key=lambda a: a.score, reverse=True)
         print_json(ranked[: args.limit])
         return 0
     if not artifacts:
@@ -706,7 +794,6 @@ def cmd_files(args) -> int:
         return 0
     print("Detected Files")
     print("-" * 14)
-    ranked = sorted(artifacts, key=lambda a: a.score, reverse=True)
     display = ranked if args.verbose else [artifact for artifact in ranked if artifact.certainty != "rejected"]
     for idx, artifact in enumerate(display[: args.limit], start=1):
         print(format_artifact_row(idx, artifact, include_reasons=True))
@@ -721,7 +808,13 @@ def cmd_files(args) -> int:
 def cmd_artifacts(args) -> int:
     path = resolve_input(args)
     artifacts = load_artifacts_for_command(path, args.include_raw, not args.no_payloads)
-    ranked = sorted(artifacts, key=lambda a: a.score, reverse=True)
+    ranked = filter_artifacts_for_display(
+        artifacts,
+        types=getattr(args, "type", None),
+        min_score=getattr(args, "min_score", None),
+        extractable=getattr(args, "extractable", False),
+        suspicious=getattr(args, "suspicious", False),
+    )
     if args.json:
         print_json(ranked[: args.limit])
         return 0
@@ -730,7 +823,7 @@ def cmd_artifacts(args) -> int:
         return 0
     print("Artifacts")
     print("-" * 9)
-    display = ranked if args.verbose else [artifact for artifact in ranked if artifact.certainty != "rejected"]
+    display = ranked if (args.verbose or args.show_rejected) else [artifact for artifact in ranked if artifact.certainty != "rejected"]
     for idx, artifact in enumerate(display[: args.limit], start=1):
         status = artifact.extraction_status or "not-extracted"
         print(f"{format_artifact_row(idx, artifact)} status={status}")
@@ -800,13 +893,16 @@ def cmd_extract(args) -> int:
 
 
 def cmd_suspicious(args) -> int:
+    print_deprecated_alias("suspicious", "artifacts", "--suspicious")
     path = resolve_input(args)
     artifacts = load_artifacts_for_command(path, not args.no_raw, not args.no_payloads)
-    if args.type:
-        wanted = {item.strip().lower() for item in args.type.split(",") if item.strip()}
-        artifacts = [artifact for artifact in artifacts if artifact.kind.lower() in wanted]
-    ranked = sorted((score_artifact(artifact) for artifact in artifacts), key=lambda a: a.score, reverse=True)
-    ranked = [artifact for artifact in ranked if artifact.score >= args.min_risk]
+    ranked = filter_artifacts_for_display(
+        artifacts,
+        types=args.type,
+        min_score=args.min_risk,
+        extractable=False,
+        suspicious=True,
+    )
     if args.json:
         print_json(ranked[: args.limit])
         return 0
@@ -831,6 +927,8 @@ def cmd_suspicious(args) -> int:
 def cmd_hunt(args) -> int:
     path = resolve_input(args)
     packets = parse_packets(path)
+    tftp_records = build_tftp_records(packets)
+    tftp_transfers = build_tftp_transfers(tftp_records)
     payload_rows, payload_map = payload_sources(packets)
     rows = gather_strings(path, payload_rows, include_raw=True, min_len=args.min_len)
     flags = detect_flags(rows, args.ctf_flag)
@@ -863,6 +961,7 @@ def cmd_hunt(args) -> int:
             "possible_email_clues": [{"source": source, "text": text} for source, text in emails[: args.limit]],
             "possible_clues": [{"source": source, "text": text} for source, text in clues[: args.limit]],
             "decoded_strings": [{"source": source, "text": text} for source, text in decoded[: args.limit]],
+            "tftp_transfers": tftp_transfers[: args.limit],
             "artifacts": sorted(artifacts, key=lambda a: a.score, reverse=True)[: args.limit],
         })
         return 0
@@ -876,6 +975,7 @@ def cmd_hunt(args) -> int:
     print_hunt_section("Possible Clues", clues, args.limit)
     print_hunt_section("Decoded-looking Strings", decoded, args.limit)
     print_hunt_protocol_sections(packets, args.limit)
+    print_tftp_hunt_section(tftp_transfers, args.limit)
     print("")
     print("Detected Files")
     print("-" * 14)
@@ -896,6 +996,8 @@ def cmd_hunt(args) -> int:
         print(f"- Extract artifacts: {extract_command_for_artifacts(path, artifacts)}")
     elif artifacts:
         print("- Artifact signatures were rejected by validation; inspect pcat artifacts output before attempting extraction.")
+    if tftp_transfers:
+        print(f"- Inspect TFTP transfers: {format_shell_command(['pcat', 'tftp', '-i', path, '--json'])}")
     if flags or creds:
         print(f"- Save strings: {format_shell_command(['pcat', 'strings', '-i', path, '--output', 'strings.txt'])}")
     print(f"- Run full report: {format_shell_command(['pcat', 'analyze', '-i', path, '--ctf', '--extract', '-o', default_output_dir(path)])}")
@@ -937,7 +1039,7 @@ def cmd_doctor(args) -> int:
         "purpose": "optional ML anomaly scoring",
     }
     result = {
-        "pcat_version": "0.2.3",
+        "pcat_version": "0.2.4",
         "python": sys.version.split()[0],
         "tools": tools,
         "python_packages": [optional_ml],
@@ -1007,6 +1109,103 @@ def resolve_string_source_flags(source: str, include_raw: bool, include_payloads
     return include_raw, include_payloads
 
 
+def compile_search_pattern(keyword: str, regex: bool, ignore_case: bool):
+    flags = re.IGNORECASE if ignore_case else 0
+    pattern = keyword if regex else re.escape(keyword)
+    try:
+        return re.compile(pattern, flags)
+    except re.error as exc:
+        raise InvalidArgumentError(f"Invalid regex pattern: {exc}") from exc
+
+
+def build_search_records(path: Path, args) -> list[dict[str, str]]:
+    scopes = search_scopes(args.scope)
+    records: list[dict[str, str]] = []
+    need_strings = bool(scopes & {"strings", "decoded"})
+    string_rows: list[tuple[str, str]] = []
+    if need_strings:
+        include_raw, include_payloads = resolve_string_source_flags(args.source, not args.no_raw, not args.no_payloads)
+        string_rows = load_strings_for_command(path, args.min_len, include_raw, include_payloads)
+    if "strings" in scopes:
+        for source, text in string_rows:
+            records.append(search_record("strings", "raw_string" if source == "raw-file" else "payload_string", source, text, source))
+    if "decoded" in scopes:
+        for source, text in string_rows:
+            for decoded in decode_interesting(text):
+                records.append(search_record("decoded", "decoded_string", source, decoded, source))
+    if scopes & {"evidence", "protocols", "artifacts", "findings"}:
+        report = analyze(path, AnalyzeOptions(no_ml=True, min_risk=0))
+        if "protocols" in scopes:
+            records.extend(protocol_search_records(report))
+        if "evidence" in scopes:
+            for item in report.evidence:
+                if args.scope == "all" and item.type in {"raw_string", "payload_string", "decoded_string"}:
+                    continue
+                records.append(search_record("evidence", item.type, item.evidence_id, item.preview, evidence_location(item), item.fields))
+        if "artifacts" in scopes:
+            for artifact in report.artifacts:
+                text = f"{artifact.kind} {artifact.filename} {artifact.source} {artifact.certainty} {artifact.validation} {' '.join(artifact.tags)} {' '.join(artifact.reasons)}"
+                records.append(search_record("artifacts", artifact.kind, artifact.artifact_id, text, artifact.source, to_plain(artifact)))
+        if "findings" in scopes:
+            for finding in report.findings:
+                text = " ".join([finding.title, finding.category, finding.explanation, finding.next_step, " ".join(finding.evidence)])
+                records.append(search_record("findings", finding.category, finding.finding_id or finding.title, text, finding.related, to_plain(finding)))
+    return records
+
+
+def search_scopes(scope: str) -> set[str]:
+    if scope == "all":
+        return {"strings", "decoded", "evidence", "protocols", "artifacts", "findings"}
+    return {scope}
+
+
+def search_record(scope: str, record_type: str, source: str, text: str, location: str = "", fields=None) -> dict[str, str]:
+    return {
+        "scope": scope,
+        "type": record_type,
+        "source": source,
+        "location": location,
+        "text": re.sub(r"\s+", " ", str(text)).strip(),
+        "fields": fields or {},
+    }
+
+
+def search_record_haystack(record: dict) -> str:
+    return json.dumps(to_plain(record), sort_keys=True, default=str)
+
+
+def evidence_location(item) -> str:
+    parts = []
+    if item.frame_start:
+        parts.append(f"frame:{item.frame_start}")
+    if item.stream_id:
+        parts.append(f"stream:{item.stream_id}")
+    return " ".join(parts)
+
+
+def protocol_search_records(report) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    for item in report.dns_records:
+        text = f"{item.query} {item.answer} {item.rcode}"
+        records.append(search_record("protocols", "dns", f"frame:{item.frame_number}", text, f"frame:{item.frame_number}", to_plain(item)))
+    for item in report.http_records:
+        text = " ".join([item.method, item.full_uri or item.uri, item.host, item.status, item.content_type, item.user_agent])
+        records.append(search_record("protocols", "http", f"frame:{item.frame_number}", text, f"frame:{item.frame_number} stream:{item.stream_id}".strip(), to_plain(item)))
+    for item in report.smtp_records:
+        text = " ".join([item.command, item.parameter, item.response, item.message, item.auth_username])
+        records.append(search_record("protocols", "smtp", f"frame:{item.frame_number}", text, f"frame:{item.frame_number} stream:{item.stream_id}".strip(), to_plain(item)))
+    for item in report.mqtt_records:
+        text = " ".join([item.topic, item.message, item.username])
+        records.append(search_record("protocols", "mqtt", f"frame:{item.frame_number}", text, f"frame:{item.frame_number} stream:{item.stream_id}".strip(), to_plain(item)))
+    for item in report.tftp_records:
+        text = " ".join([item.opcode, item.source_file, item.destination_file, item.transfer_type, item.block, item.error_message])
+        records.append(search_record("protocols", "tftp_packet", f"frame:{item.frame_number}", text, f"frame:{item.frame_number}", to_plain(item)))
+    for item in report.tftp_transfers:
+        text = " ".join([item.transfer_id, item.filename, item.direction, item.completeness, item.error])
+        records.append(search_record("protocols", "tftp_transfer", item.transfer_id, text, f"request_frame:{item.request_frame or ''}", to_plain(item)))
+    return records
+
+
 def load_artifacts_for_command(path: Path, include_raw: bool, include_payloads: bool):
     payloads = []
     if include_payloads:
@@ -1015,6 +1214,34 @@ def load_artifacts_for_command(path: Path, include_raw: bool, include_payloads: 
         payloads = list(payload_map.items())
     artifacts = detect_artifacts(path, payloads, include_raw=include_raw)
     return [score_artifact(artifact) for artifact in artifacts]
+
+
+def filter_artifacts_for_display(
+    artifacts,
+    types: str | None = None,
+    min_score: int | None = None,
+    extractable: bool = False,
+    suspicious: bool = False,
+):
+    ranked = sorted((score_artifact(artifact) for artifact in artifacts), key=lambda a: a.score, reverse=True)
+    if types:
+        wanted = {item.strip().lower() for item in types.split(",") if item.strip()}
+        ranked = [artifact for artifact in ranked if artifact.kind.lower() in wanted]
+    threshold = min_score
+    if suspicious and threshold is None:
+        threshold = 20
+    if threshold is not None:
+        ranked = [artifact for artifact in ranked if artifact.score >= threshold]
+    if extractable:
+        ranked = [artifact for artifact in ranked if artifact_is_extractable(artifact)]
+    return ranked
+
+
+def print_deprecated_alias(command: str, replacement: str, extra: str = "") -> None:
+    parts = ["pcat", replacement]
+    if extra:
+        parts.append(extra)
+    print(f"Warning: pcat {command} is deprecated; use {format_shell_command(parts)}.", file=sys.stderr)
 
 
 def selectable_artifacts(artifacts, payload_map: dict[str, bytes]):
@@ -1150,6 +1377,77 @@ def run_tshark_export_http(path: Path, out: Path) -> dict[str, str | int]:
     return {"output_dir": str(http_dir), "exported_count": exported, "status": status, "error": error}
 
 
+def export_tftp_transfers(report, out_dir: Path, limit: int, include_incomplete: bool) -> dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    exported = []
+    skipped = []
+    used_names: set[str] = set()
+    for transfer in report.tftp_transfers[: max(0, limit)]:
+        records = tftp_records_for_transfer(report.tftp_records, transfer)
+        blob = tftp_reconstructed_bytes(records)
+        if not blob:
+            skipped.append({"transfer_id": transfer.transfer_id, "reason": "no_reconstructed_bytes"})
+            continue
+        if transfer.completeness != "complete" and not include_incomplete:
+            skipped.append({"transfer_id": transfer.transfer_id, "reason": f"completeness={transfer.completeness}"})
+            continue
+        filename = unique_export_name(safe_export_filename(transfer.filename or transfer.transfer_id, ".bin"), used_names)
+        output_path = out_dir / filename
+        output_path.write_bytes(blob)
+        transfer.export_path = str(output_path)
+        transfer.sha256 = hashlib.sha256(blob).hexdigest()
+        exported.append({
+            "transfer_id": transfer.transfer_id,
+            "path": transfer.export_path,
+            "size": len(blob),
+            "sha256": transfer.sha256,
+            "completeness": transfer.completeness,
+        })
+    return {
+        "output_dir": str(out_dir),
+        "exported": len(exported),
+        "skipped": len(skipped),
+        "exported_records": exported,
+        "skipped_records": skipped,
+    }
+
+
+def tftp_records_for_transfer(records, transfer):
+    frames = set(transfer.data_frames)
+    request_frame = transfer.request_frame or 0
+    selected = [
+        record
+        for record in records
+        if record.frame_number in frames or (request_frame and safe_int(record.request_frame) == request_frame)
+    ]
+    return selected or [
+        record
+        for record in records
+        if {record.src_ip, record.dst_ip} == {transfer.client_ip, transfer.server_ip}
+    ]
+
+
+def safe_export_filename(name: str, fallback_ext: str = "") -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("._")
+    if not cleaned:
+        cleaned = "tftp_object"
+    if fallback_ext and "." not in Path(cleaned).name:
+        cleaned += fallback_ext
+    return cleaned
+
+
+def unique_export_name(name: str, used: set[str]) -> str:
+    candidate = name
+    stem = Path(name).stem
+    suffix = Path(name).suffix
+    counter = 1
+    while candidate in used:
+        counter += 1
+        candidate = f"{stem}_{counter:03d}{suffix}"
+    used.add(candidate)
+    return candidate
+
+
 def print_summary(report, top: int) -> None:
     s = report.summary
     print("PCAT Summary")
@@ -1240,6 +1538,19 @@ def print_hunt_protocol_sections(packets, limit: int) -> None:
     print_hunt_section("MQTT Records", mqtt_rows, limit)
     print_hunt_section("ICMP Payload Clues", icmp_rows, limit)
     print_hunt_section("SYN Payload Candidates", syn_payload_rows, limit)
+
+
+def print_tftp_hunt_section(transfers, limit: int) -> None:
+    rows = []
+    for transfer in transfers:
+        rows.append((
+            transfer.transfer_id,
+            (
+                f"file={transfer.filename or '(unknown)'} direction={transfer.direction} "
+                f"bytes={transfer.byte_count} completeness={transfer.completeness}"
+            ),
+        ))
+    print_hunt_section("TFTP Transfers", rows, limit)
 
 
 def has_interesting_payload_preview(text: str) -> bool:

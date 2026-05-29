@@ -185,6 +185,7 @@ def write_reports(report: AnalysisReport, out_dir: Path, formats: set[str]) -> l
                 ("hosts.csv", write_hosts_csv),
                 ("dns.csv", write_dns_csv),
                 ("http.csv", write_http_csv),
+                ("tftp.csv", write_tftp_csv),
                 ("artifacts.csv", write_artifacts_csv),
                 ("findings.csv", write_findings_csv),
             ]:
@@ -262,6 +263,48 @@ def write_http_csv(report: AnalysisReport, path: Path) -> None:
                 record.content_type,
                 record.content_length,
                 record.user_agent,
+            ])
+
+
+def write_tftp_csv(report: AnalysisReport, path: Path) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow([
+            "transfer_id",
+            "filename",
+            "direction",
+            "client_ip",
+            "server_ip",
+            "request_frame",
+            "start_time",
+            "end_time",
+            "block_count",
+            "byte_count",
+            "completeness",
+            "mode",
+            "data_frames",
+            "error",
+            "export_path",
+            "sha256",
+        ])
+        for record in report.tftp_transfers:
+            writer.writerow([
+                record.transfer_id,
+                record.filename,
+                record.direction,
+                record.client_ip,
+                record.server_ip,
+                record.request_frame or "",
+                f"{record.start_time:.6f}",
+                f"{record.end_time:.6f}",
+                record.block_count,
+                record.byte_count,
+                record.completeness,
+                record.mode,
+                ";".join(str(frame) for frame in record.data_frames),
+                record.error,
+                record.export_path,
+                record.sha256,
             ])
 
 
@@ -345,6 +388,7 @@ def render_markdown(report: AnalysisReport) -> str:
         f"- Duration: `{s.duration:.2f}s`",
         f"- Findings: `{len(report.findings)}`",
         f"- Artifacts: `{len(report.artifacts)}`",
+        f"- TFTP transfers: `{len(report.tftp_transfers)}`",
         f"- Stories: `{len(report.stories)}`",
         f"- Evidence records: `{len(report.evidence)}`",
         "",

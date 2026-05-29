@@ -16,6 +16,8 @@ from .models import (
     PacketRecord,
     SmtpRecord,
     StreamRecord,
+    TftpRecord,
+    TftpTransferRecord,
 )
 from .stringtools import decode_base64_value, decode_interesting, detect_credentials, detect_flags
 
@@ -37,6 +39,7 @@ def build_report_evidence(
     evidence.extend(http_evidence(report.http_records))
     evidence.extend(smtp_evidence(report.smtp_records))
     evidence.extend(mqtt_evidence(report.mqtt_records))
+    evidence.extend(tftp_evidence(report.tftp_records, report.tftp_transfers))
     evidence.extend(payload_weirdness_evidence(packets))
     evidence.extend(string_evidence(strings))
     evidence.extend(artifact_evidence(report.artifacts))
@@ -77,28 +80,40 @@ def flow_evidence(flows: list[FlowRecord]) -> list[EvidenceRecord]:
 def stream_evidence(streams: list[StreamRecord]) -> list[EvidenceRecord]:
     records = []
     for stream in streams[:200]:
+        is_udp = stream.kind == "udp_conversation"
+        evidence_key = stream.conversation_id or stream.stream_id
+        handoff_filters = udp_conversation_filters(stream) if is_udp else [f"tcp.stream == {stream.stream_id}"]
+        preview = (
+            f"udp conversation {stream.src_ip}:{stream.src_port} <-> {stream.dst_ip}:{stream.dst_port} protocol={stream.protocol}"
+            if is_udp
+            else f"tcp.stream {stream.stream_id} {stream.src_ip}:{stream.src_port} -> {stream.dst_ip}:{stream.dst_port}"
+        )
         records.append(EvidenceRecord(
-            evidence_id=stable_id("stream", stream.stream_id),
-            type="stream",
+            evidence_id=stable_id("stream", evidence_key),
+            type="udp_conversation" if is_udp else "stream",
             source_module="streams",
             protocol=stream.protocol,
             timestamp=stream.start_time,
             stream_id=stream.stream_id,
+            frame_start=stream.frame_start,
+            frame_end=stream.frame_end,
             src_ip=stream.src_ip,
             src_port=stream.src_port,
             dst_ip=stream.dst_ip,
             dst_port=stream.dst_port,
             fields={
+                "kind": stream.kind,
+                "conversation_id": stream.conversation_id,
                 "packet_count": stream.packet_count,
                 "byte_count": stream.byte_count,
                 "duration": stream.duration,
                 "tags": stream.tags,
                 "interest_score": stream.interest_score,
             },
-            preview=f"tcp.stream {stream.stream_id} {stream.src_ip}:{stream.src_port} -> {stream.dst_ip}:{stream.dst_port}",
+            preview=preview,
             confidence="high",
             confidence_score=0.9,
-            handoff_filters=[f"tcp.stream == {stream.stream_id}"],
+            handoff_filters=handoff_filters,
         ))
     return records
 
@@ -248,6 +263,81 @@ def mqtt_evidence(records: list[MqttRecord]) -> list[EvidenceRecord]:
             confidence="high",
             confidence_score=0.9,
             handoff_filters=stream_or_frame_filter(r.stream_id, r.frame_number),
+        ))
+    return evidence
+
+
+def tftp_evidence(records: list[TftpRecord], transfers: list[TftpTransferRecord]) -> list[EvidenceRecord]:
+    evidence = []
+    for r in records[:500]:
+        fields = {
+            "opcode": r.opcode,
+            "source_file": r.source_file,
+            "destination_file": r.destination_file,
+            "request_frame": r.request_frame,
+            "transfer_type": r.transfer_type,
+            "block": r.block,
+            "block_full": r.block_full,
+            "error_code": r.error_code,
+            "error_message": r.error_message,
+            "reassembled_length": r.reassembled_length,
+        }
+        preview_parts = [
+            f"opcode={r.opcode}" if r.opcode else "",
+            f"file={r.source_file or r.destination_file}" if r.source_file or r.destination_file else "",
+            f"block={r.block or r.block_full}" if r.block or r.block_full else "",
+            f"error={r.error_code} {r.error_message}".strip() if r.error_code or r.error_message else "",
+            f"bytes={len(decode_hex_bytes(r.data))}" if r.data else "",
+            f"reassembled={len(decode_hex_bytes(r.reassembled_data))}" if r.reassembled_data else "",
+        ]
+        evidence.append(EvidenceRecord(
+            evidence_id=stable_id("tftp_packet", r.frame_number, r.opcode, r.source_file, r.destination_file, r.block),
+            type="tftp_packet",
+            source_module="protocols.tftp",
+            protocol="TFTP",
+            timestamp=r.timestamp,
+            frame_start=r.frame_number,
+            frame_end=r.frame_number,
+            src_ip=r.src_ip,
+            src_port=r.src_port,
+            dst_ip=r.dst_ip,
+            dst_port=r.dst_port,
+            fields=fields,
+            preview="; ".join(part for part in preview_parts if part),
+            confidence="high",
+            confidence_score=0.9,
+            handoff_filters=[f"frame.number == {r.frame_number}"],
+        ))
+    for transfer in transfers[:200]:
+        evidence.append(EvidenceRecord(
+            evidence_id=stable_id("tftp_transfer", transfer.transfer_id),
+            type="tftp_transfer",
+            source_module="protocols.tftp",
+            protocol="TFTP",
+            timestamp=transfer.start_time,
+            frame_start=transfer.request_frame,
+            src_ip=transfer.client_ip,
+            dst_ip=transfer.server_ip,
+            fields={
+                "transfer_id": transfer.transfer_id,
+                "filename": transfer.filename,
+                "direction": transfer.direction,
+                "client_ip": transfer.client_ip,
+                "server_ip": transfer.server_ip,
+                "request_frame": transfer.request_frame,
+                "block_count": transfer.block_count,
+                "byte_count": transfer.byte_count,
+                "completeness": transfer.completeness,
+                "mode": transfer.mode,
+                "data_frames": transfer.data_frames,
+                "error": transfer.error,
+                "export_path": transfer.export_path,
+                "sha256": transfer.sha256,
+            },
+            preview=f"{transfer.direction} {transfer.filename or '(unknown file)'} bytes={transfer.byte_count} completeness={transfer.completeness}",
+            confidence="high" if transfer.completeness == "complete" else "medium",
+            confidence_score=0.9 if transfer.completeness == "complete" else 0.65,
+            handoff_filters=tftp_transfer_filters(transfer),
         ))
     return evidence
 
@@ -425,6 +515,31 @@ def stream_or_frame_filter(stream_id: str, frame_number: int) -> list[str]:
     return []
 
 
+def udp_conversation_filters(stream: StreamRecord) -> list[str]:
+    filters = []
+    if stream.src_ip and stream.dst_ip:
+        filters.append(f"ip.addr == {stream.src_ip} && ip.addr == {stream.dst_ip}")
+    ports = [port for port in [stream.src_port, stream.dst_port] if port]
+    if len(ports) == 2:
+        filters.append(f"udp.port == {ports[0]} && udp.port == {ports[1]}")
+    elif ports:
+        filters.append(f"udp.port == {ports[0]}")
+    if stream.frame_start and stream.frame_end:
+        filters.append(f"frame.number >= {stream.frame_start} && frame.number <= {stream.frame_end}")
+    return filters
+
+
+def tftp_transfer_filters(transfer: TftpTransferRecord) -> list[str]:
+    filters = []
+    if transfer.client_ip and transfer.server_ip:
+        filters.append(f"ip.addr == {transfer.client_ip} && ip.addr == {transfer.server_ip} && tftp")
+    elif transfer.client_ip:
+        filters.append(f"ip.addr == {transfer.client_ip} && tftp")
+    if transfer.request_frame:
+        filters.append(f"tftp.request_frame == {transfer.request_frame} || frame.number == {transfer.request_frame}")
+    return filters
+
+
 def host_filters(src: str, dst: str) -> list[str]:
     filters = []
     if src and dst:
@@ -442,6 +557,15 @@ def payload_preview(payload_hex: str) -> str:
     except ValueError:
         text = payload_hex
     return re.sub(r"\s+", " ", text).strip()[:512]
+
+
+def decode_hex_bytes(value: str) -> bytes:
+    if not value:
+        return b""
+    try:
+        return bytes.fromhex(value.replace(":", "").replace(" ", ""))
+    except ValueError:
+        return b""
 
 
 def safe_int(value: str) -> int:

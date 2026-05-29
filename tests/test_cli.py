@@ -1,5 +1,5 @@
 from pcat.cli import main, parse_formats
-from pcat.models import AnalysisReport, CaptureSummary, EvidenceRecord, PacketRecord
+from pcat.models import AnalysisReport, CaptureSummary, EvidenceRecord, PacketRecord, TftpRecord, TftpTransferRecord
 
 
 def test_parse_formats_aliases():
@@ -64,7 +64,9 @@ def test_search_source_packet_uses_payload_source(tmp_path, capsys, monkeypatch)
     monkeypatch.setattr("pcat.cli.parse_packets", fake_parse)
     assert main(["search", "-i", str(sample), "packetflag", "--source", "packet"]) == 0
     output = capsys.readouterr().out
-    assert "[packet:7] packetflag" in output
+    assert "[strings:payload_string]" in output
+    assert "packet:7" in output
+    assert "packetflag" in output
     assert "rawflag" not in output
 
 
@@ -205,4 +207,75 @@ def test_empty_protocol_views_are_explicit(tmp_path, capsys, monkeypatch):
     assert main(["dns", "-i", str(sample)]) == 0
     assert "No DNS records found" in capsys.readouterr().out
     assert main(["streams", "-i", str(sample)]) == 0
-    assert "No TCP streams found" in capsys.readouterr().out
+    assert "No TCP streams or UDP conversations found" in capsys.readouterr().out
+
+
+def test_search_protocol_scope_finds_tftp_transfer(tmp_path, capsys, monkeypatch):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"abc")
+
+    def fake_analyze(_path, _options):
+        return AnalysisReport(
+            summary=CaptureSummary(file=str(sample), size_bytes=3),
+            tftp_transfers=[
+                TftpTransferRecord(
+                    transfer_id="tftp:1:firmware.bin",
+                    filename="firmware.bin",
+                    direction="download",
+                    client_ip="10.0.0.2",
+                    server_ip="10.0.0.3",
+                    request_frame=1,
+                    byte_count=5,
+                    completeness="complete",
+                )
+            ],
+        )
+
+    monkeypatch.setattr("pcat.cli.analyze", fake_analyze)
+    assert main(["search", "-i", str(sample), "firmware", "--scope", "protocols"]) == 0
+    output = capsys.readouterr().out
+    assert "[protocols:tftp_transfer]" in output
+    assert "firmware.bin" in output
+
+
+def test_tftp_command_exports_complete_transfer(tmp_path, capsys, monkeypatch):
+    sample = tmp_path / "sample.pcap"
+    sample.write_bytes(b"abc")
+    out = tmp_path / "case"
+
+    def fake_analyze(_path, _options):
+        return AnalysisReport(
+            summary=CaptureSummary(file=str(sample), size_bytes=3),
+            tftp_records=[
+                TftpRecord(
+                    frame_number=2,
+                    timestamp=1.0,
+                    src_ip="10.0.0.3",
+                    dst_ip="10.0.0.2",
+                    opcode="3",
+                    request_frame="1",
+                    block="1",
+                    data=b"hello".hex(),
+                )
+            ],
+            tftp_transfers=[
+                TftpTransferRecord(
+                    transfer_id="tftp:1:firmware.bin",
+                    filename="firmware.bin",
+                    direction="download",
+                    client_ip="10.0.0.2",
+                    server_ip="10.0.0.3",
+                    request_frame=1,
+                    block_count=1,
+                    byte_count=5,
+                    completeness="complete",
+                    data_frames=[2],
+                )
+            ],
+        )
+
+    monkeypatch.setattr("pcat.cli.analyze", fake_analyze)
+    assert main(["tftp", "-i", str(sample), "--export", "-o", str(out)]) == 0
+    output = capsys.readouterr().out
+    assert "Exported: 1" in output
+    assert (out / "tftp_objects" / "firmware.bin").read_bytes() == b"hello"

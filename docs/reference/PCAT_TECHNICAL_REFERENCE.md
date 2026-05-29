@@ -9,13 +9,13 @@ For architectural goals and design philosophy, see `PCAT_ARCHITECTURE.md`.
 Current PCAT version:
 
 ```text
-0.2.3
+0.2.4
 ```
 
 Current report schema version:
 
 ```text
-0.2.3
+0.2.4
 ```
 
 Required runtime:
@@ -182,6 +182,7 @@ When report generation is requested, PCAT can write:
 - `hosts.csv`: host counts.
 - `dns.csv`: DNS records.
 - `http.csv`: HTTP records.
+- `tftp.csv`: TFTP transfer records.
 - `artifacts.csv`: artifact records.
 - `findings.csv`: finding records.
 - `artifacts/manifest.json`: extracted artifact manifest when extraction runs.
@@ -329,11 +330,14 @@ A bidirectional summary keyed by endpoint pair and protocol. It tracks:
 
 ### `StreamRecord`
 
-A TCP stream/conversation summary when TShark exposes `tcp.stream`. It tracks:
+A ranked conversation summary. TCP rows use TShark `tcp.stream` IDs; UDP rows use normalized endpoint/protocol conversation IDs. It tracks:
 
 - stream ID
+- conversation ID
+- kind (`tcp_stream` or `udp_conversation`)
 - protocol
 - source and destination endpoint
+- first/last frame when available
 - packet count
 - byte count
 - start/end time
@@ -350,6 +354,7 @@ PCAT has protocol-specific records for:
 - HTTP.
 - SMTP.
 - MQTT.
+- TFTP packet records and TFTP transfer records.
 
 These records are used by commands, reports, evidence generation, and findings.
 
@@ -402,7 +407,7 @@ Artifact source scopes:
 
 - `packet_payload`: found in a parsed packet payload.
 - `raw_capture`: found in raw capture bytes.
-- `http_object`, `stream_reassembled`, and `tftp_object` are reserved for later object/reassembly features.
+- `http_object`, `stream_reassembled`, and `tftp_object` are reserved for future `ArtifactRecord` sources beyond the current object exporters.
 
 ### `EvidenceRecord`
 
@@ -667,7 +672,7 @@ JSON mode includes schema version, capture metadata, summary, briefing, stories,
 
 ### `pcat streams`
 
-Lists ranked TCP streams/conversations.
+Lists ranked TCP streams and UDP conversations.
 
 ```bash
 pcat streams -i capture.pcap
@@ -677,8 +682,9 @@ pcat streams -i capture.pcap --json
 
 Shows:
 
-- TCP stream ID.
+- TCP stream ID or UDP conversation ID.
 - Endpoint pair.
+- Protocol.
 - Packet count.
 - Byte count.
 - Interest score.
@@ -712,6 +718,36 @@ Shows:
 
 - Top HTTP hosts.
 - HTTP records with frame, stream, method, URI, status, content type, and content length.
+
+### `pcat tftp`
+
+Shows TFTP transfer records and optionally exports recoverable objects.
+
+```bash
+pcat tftp -i capture.pcap
+pcat tftp capture.pcap --json
+pcat tftp -i capture.pcap --export -o case-output
+```
+
+Options:
+
+- `--export`: write recoverable TFTP objects under `<out>/tftp_objects/`.
+- `--include-incomplete`: export incomplete or unknown-completeness transfers when bytes are present.
+- `--top N`, `--limit N`: maximum displayed/exported transfers.
+- `-o, --out DIR`: output folder for `--export`.
+- `--force`: allow writing into an existing output folder.
+
+Shows:
+
+- Transfer ID.
+- Filename from RRQ/WRQ metadata when available.
+- Direction.
+- Client/server IP.
+- Request frame.
+- Block count.
+- Byte count.
+- Completeness and error state.
+- Export path and SHA256 after export.
 
 ### `pcat evidence`
 
@@ -782,13 +818,14 @@ Invalid regex patterns return invalid-argument exit code `2`.
 
 ### `pcat search`
 
-Searches extracted strings.
+Searches PCAT's evidence index.
 
 ```bash
 pcat search -i capture.pcap password
 pcat search -i capture.pcap "flag\\{.*\\}" --regex
 pcat search capture.pcap token --ignore-case --limit 50
 pcat search -i capture.pcap flag --source packet
+pcat search -i capture.pcap firmware --scope protocols
 pcat search -i capture.pcap password --json
 ```
 
@@ -797,9 +834,10 @@ Options:
 - `keyword`: required search term or regex.
 - `--regex`: treat keyword as regex.
 - `--ignore-case`: case-insensitive search.
+- `--scope all|strings|decoded|evidence|protocols|artifacts|findings`: choose search scope.
 - `--min N`: minimum string length before search.
 - `--limit N`, `--top N`: maximum printed rows.
-- `--source all|raw|packet`: choose the same source index used by `strings`.
+- `--source all|raw|packet`: choose source behavior for string-backed scopes.
 - `--no-raw`: skip raw PCAP byte scanning.
 - `--no-payloads`: skip packet payload scanning.
 
@@ -807,7 +845,7 @@ Invalid regex patterns return invalid-argument exit code `2`.
 
 ### `pcat files`
 
-Detects embedded file signatures.
+Deprecated compatibility alias for artifact listing. It keeps the older raw-scan default for scripts; prefer `pcat artifacts`.
 
 ```bash
 pcat files -i capture.pcap
@@ -837,11 +875,13 @@ Shows:
 
 ### `pcat artifacts`
 
-Shows the artifact manager view without writing files.
+Shows the consolidated artifact manager view without writing files.
 
 ```bash
 pcat artifacts -i capture.pcap
 pcat artifacts capture.pcap --include-raw --top 100
+pcat artifacts -i capture.pcap --type pe,zip --min-score 40
+pcat artifacts -i capture.pcap --suspicious --extractable
 pcat artifacts -i capture.pcap --json
 ```
 
@@ -849,6 +889,11 @@ Options:
 
 - `--include-raw`: include raw PCAP byte scanning.
 - `--no-payloads`: skip packet payload scanning.
+- `--type LIST`: comma-separated artifact type filter.
+- `--min-score N`: minimum artifact score.
+- `--extractable`: only show artifacts PCAT would select for extraction.
+- `--show-rejected`: include rejected hits in text output.
+- `--suspicious`: apply suspicious-artifact ranking defaults.
 - `--limit N`, `--top N`: maximum rows.
 
 Default behavior focuses on packet payload artifacts.
@@ -890,7 +935,7 @@ Reports:
 
 ### `pcat suspicious`
 
-Ranks suspicious artifact/file hits.
+Deprecated compatibility alias for `pcat artifacts --suspicious`. It keeps the older option names for scripts.
 
 ```bash
 pcat suspicious -i capture.pcap
@@ -991,6 +1036,8 @@ Top-level `report.json` fields:
 - `http_records`
 - `smtp_records`
 - `mqtt_records`
+- `tftp_records`
+- `tftp_transfers`
 - `artifacts`
 - `timeline`
 - `handoff`
@@ -1057,6 +1104,27 @@ Columns:
 - `content_type`
 - `content_length`
 - `user_agent`
+
+### `tftp.csv`
+
+Columns:
+
+- `transfer_id`
+- `filename`
+- `direction`
+- `client_ip`
+- `server_ip`
+- `request_frame`
+- `start_time`
+- `end_time`
+- `block_count`
+- `byte_count`
+- `completeness`
+- `mode`
+- `data_frames`
+- `error`
+- `export_path`
+- `sha256`
 
 ### `artifacts.csv`
 
@@ -1152,13 +1220,11 @@ Extracted artifacts may be malicious. Treat extracted files as untrusted.
 
 These are planned or proposed. They should not be described as implemented behavior.
 
-### V2.4 Protocol Views And Reassembly
+### Future Protocol Work After 0.2.4
 
 - DNS clustering, ranking, and encoded-label grouping.
 - HTTP stream/object grouping and short-response ranking.
 - MQTT topic/message/payload view and export.
-- TFTP transfer grouping and object export with completeness metadata.
-- UDP conversation ranking for non-TCP workflows.
 - ICMP trail summaries with payload/covert-channel hints.
 
 ### External Tool Integrations
@@ -1186,7 +1252,6 @@ These are planned or proposed. They should not be described as implemented behav
 ### Analysis Features
 
 - Full stream reassembly.
-- TFTP object reassembly/export.
 - MQTT message and payload export.
 - DNS encoded-label grouping.
 - USB/HID keyboard triage or precise handoff.

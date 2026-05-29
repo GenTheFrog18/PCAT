@@ -23,6 +23,8 @@ from .models import (
     PacketRecord,
     SmtpRecord,
     StreamRecord,
+    TftpRecord,
+    TftpTransferRecord,
     TimelineEvent,
     severity_from_score,
 )
@@ -90,6 +92,8 @@ def analyze(path: Path, options: AnalyzeOptions | None = None) -> AnalysisReport
     http_records = build_http_records(packets)
     smtp_records = build_smtp_records(packets)
     mqtt_records = build_mqtt_records(packets)
+    tftp_records = build_tftp_records(packets)
+    tftp_transfers = build_tftp_transfers(tftp_records)
     streams = build_streams(packets)
     payload_rows, payload_map = payload_sources(packets)
     strings = gather_strings(path, payload_rows, include_raw=True)
@@ -107,6 +111,8 @@ def analyze(path: Path, options: AnalyzeOptions | None = None) -> AnalysisReport
         http_records=http_records,
         smtp_records=smtp_records,
         mqtt_records=mqtt_records,
+        tftp_records=tftp_records,
+        tftp_transfers=tftp_transfers,
         artifacts=artifacts,
         warnings=warnings,
         tool_versions={"tshark": tool_version("tshark")},
@@ -283,29 +289,283 @@ def build_mqtt_records(packets: list[PacketRecord]) -> list[MqttRecord]:
     ]
 
 
+def build_tftp_records(packets: list[PacketRecord]) -> list[TftpRecord]:
+    records: list[TftpRecord] = []
+    for p in packets:
+        if not packet_has_tftp(p):
+            continue
+        records.append(
+            TftpRecord(
+                frame_number=p.frame_number,
+                timestamp=p.timestamp,
+                src_ip=p.src_ip,
+                dst_ip=p.dst_ip,
+                src_port=p.src_port,
+                dst_port=p.dst_port,
+                opcode=p.tftp_opcode,
+                source_file=p.tftp_source_file,
+                destination_file=p.tftp_destination_file,
+                request_frame=p.tftp_request_frame,
+                transfer_type=p.tftp_type,
+                block=p.tftp_block,
+                block_full=p.tftp_block_full,
+                error_code=p.tftp_error_code,
+                error_message=p.tftp_error_message,
+                data=p.tftp_data,
+                reassembled_data=p.tftp_reassembled_data,
+                reassembled_length=p.tftp_reassembled_length,
+            )
+        )
+    return records
+
+
+def packet_has_tftp(packet: PacketRecord) -> bool:
+    if packet.protocol == "TFTP" or "tftp" in packet.protocol_stack.lower().split(":"):
+        return True
+    return any(
+        [
+            packet.tftp_opcode,
+            packet.tftp_source_file,
+            packet.tftp_destination_file,
+            packet.tftp_request_frame,
+            packet.tftp_type,
+            packet.tftp_block,
+            packet.tftp_block_full,
+            packet.tftp_error_code,
+            packet.tftp_error_message,
+            packet.tftp_data,
+            packet.tftp_reassembled_data,
+            packet.tftp_reassembled_length,
+        ]
+    )
+
+
+def build_tftp_transfers(records: list[TftpRecord]) -> list[TftpTransferRecord]:
+    transfers: dict[str, TftpTransferRecord] = {}
+    data_by_transfer: dict[str, list[TftpRecord]] = defaultdict(list)
+    request_by_frame: dict[int, str] = {}
+    endpoint_index: dict[tuple[str, str], list[str]] = defaultdict(list)
+
+    for record in records:
+        opcode = tftp_opcode(record)
+        if opcode not in {1, 2}:
+            continue
+        request_frame = record.frame_number
+        filename = tftp_filename(record)
+        transfer_id = tftp_transfer_id(record, filename)
+        transfer = TftpTransferRecord(
+            transfer_id=transfer_id,
+            filename=filename,
+            direction="download" if opcode == 1 else "upload",
+            client_ip=record.src_ip,
+            server_ip=record.dst_ip,
+            request_frame=request_frame,
+            start_time=record.timestamp,
+            end_time=record.timestamp,
+            mode=record.transfer_type,
+        )
+        transfers[transfer_id] = transfer
+        request_by_frame[request_frame] = transfer_id
+        endpoint_index[tftp_endpoint_key(record.src_ip, record.dst_ip)].append(transfer_id)
+
+    for record in records:
+        opcode = tftp_opcode(record)
+        if opcode not in {3, 5} and not record.data and not record.reassembled_data:
+            continue
+        transfer_id = tftp_transfer_for_record(record, request_by_frame, endpoint_index)
+        if not transfer_id:
+            transfer_id = tftp_orphan_transfer_id(record)
+            if transfer_id not in transfers:
+                transfers[transfer_id] = TftpTransferRecord(
+                    transfer_id=transfer_id,
+                    filename="",
+                    direction="unknown",
+                    client_ip=record.src_ip,
+                    server_ip=record.dst_ip,
+                    request_frame=safe_int(record.request_frame) or None,
+                    start_time=record.timestamp,
+                    end_time=record.timestamp,
+                )
+        transfer = transfers[transfer_id]
+        transfer.start_time = min(transfer.start_time, record.timestamp)
+        transfer.end_time = max(transfer.end_time, record.timestamp)
+        if opcode == 3 or record.data or record.reassembled_data:
+            data_by_transfer[transfer_id].append(record)
+            if record.frame_number not in transfer.data_frames:
+                transfer.data_frames.append(record.frame_number)
+        if opcode == 5 or record.error_code or record.error_message:
+            error = " ".join(part for part in [record.error_code, record.error_message] if part).strip()
+            transfer.error = error or "TFTP error packet observed"
+
+    for transfer_id, transfer in transfers.items():
+        data_records = data_by_transfer.get(transfer_id, [])
+        transfer.data_frames = sorted(transfer.data_frames)
+        transfer.block_count = len({safe_int(record.block or record.block_full) for record in data_records if safe_int(record.block or record.block_full)})
+        payload = tftp_reconstructed_bytes(data_records)
+        transfer.byte_count = len(payload)
+        transfer.completeness = tftp_completeness(transfer, data_records, payload)
+    return sorted(transfers.values(), key=lambda item: (item.start_time, item.transfer_id))
+
+
+def tftp_transfer_for_record(
+    record: TftpRecord,
+    request_by_frame: dict[int, str],
+    endpoint_index: dict[tuple[str, str], list[str]],
+) -> str:
+    request_frame = safe_int(record.request_frame)
+    if request_frame and request_frame in request_by_frame:
+        return request_by_frame[request_frame]
+    ids = endpoint_index.get(tftp_endpoint_key(record.src_ip, record.dst_ip), [])
+    return ids[-1] if ids else ""
+
+
+def tftp_reconstructed_bytes(records: list[TftpRecord]) -> bytes:
+    reassembled = sorted(
+        (decode_hex_bytes(record.reassembled_data) for record in records if record.reassembled_data),
+        key=len,
+        reverse=True,
+    )
+    if reassembled:
+        return reassembled[0]
+    ordered = sorted(records, key=lambda record: (safe_int(record.block or record.block_full), record.frame_number))
+    return b"".join(decode_hex_bytes(record.data) for record in ordered if record.data)
+
+
+def tftp_completeness(transfer: TftpTransferRecord, records: list[TftpRecord], payload: bytes) -> str:
+    if transfer.error:
+        return "error"
+    if any(record.reassembled_data for record in records):
+        return "complete"
+    if not records:
+        return "metadata_only"
+    blocks = [safe_int(record.block or record.block_full) for record in records if safe_int(record.block or record.block_full)]
+    if blocks:
+        expected = list(range(min(blocks), max(blocks) + 1))
+        if sorted(set(blocks)) != expected:
+            return "incomplete"
+    lengths = [len(decode_hex_bytes(record.data)) for record in records if record.data]
+    if lengths and lengths[-1] < 512:
+        return "complete"
+    if payload:
+        return "unknown"
+    return "metadata_only"
+
+
+def tftp_opcode(record: TftpRecord) -> int:
+    raw = str(record.opcode or record.transfer_type).strip()
+    if raw:
+        try:
+            return int(raw.split(",", 1)[0])
+        except ValueError:
+            pass
+    text = f"{record.opcode} {record.transfer_type}".lower()
+    if "read" in text or "rrq" in text:
+        return 1
+    if "write" in text or "wrq" in text:
+        return 2
+    if "data" in text:
+        return 3
+    if "ack" in text:
+        return 4
+    if "error" in text:
+        return 5
+    return 0
+
+
+def tftp_filename(record: TftpRecord) -> str:
+    return record.source_file or record.destination_file
+
+
+def tftp_transfer_id(record: TftpRecord, filename: str) -> str:
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", filename or "unknown").strip("_") or "unknown"
+    return f"tftp:{record.frame_number}:{name}"
+
+
+def tftp_orphan_transfer_id(record: TftpRecord) -> str:
+    left, right = sorted([record.src_ip or "unknown", record.dst_ip or "unknown"])
+    frame = safe_int(record.request_frame) or record.frame_number
+    return f"tftp:{frame}:{left}-{right}:orphan"
+
+
+def tftp_endpoint_key(src: str, dst: str) -> tuple[str, str]:
+    return tuple(sorted([src or "", dst or ""]))
+
+
+def decode_hex_bytes(value: str) -> bytes:
+    if not value:
+        return b""
+    try:
+        return bytes.fromhex(value.replace(":", "").replace(" ", ""))
+    except ValueError:
+        return b""
+
+
 def build_streams(packets: list[PacketRecord]) -> list[StreamRecord]:
     grouped: dict[str, StreamRecord] = {}
     for p in packets:
-        if not p.tcp_stream:
+        if p.tcp_stream:
+            key = f"tcp:{p.tcp_stream}"
+            stream = grouped.setdefault(
+                key,
+                StreamRecord(
+                    stream_id=p.tcp_stream,
+                    conversation_id=f"tcp.stream:{p.tcp_stream}",
+                    protocol=p.protocol or p.transport,
+                    src_ip=p.src_ip,
+                    src_port=p.src_port,
+                    dst_ip=p.dst_ip,
+                    dst_port=p.dst_port,
+                    start_time=p.timestamp,
+                    end_time=p.timestamp,
+                    frame_start=p.frame_number,
+                    frame_end=p.frame_number,
+                    tags=["tcp"],
+                ),
+            )
+        elif p.transport == "UDP" and p.src_ip and p.dst_ip:
+            key_parts = udp_conversation_key(p)
+            key = "udp:" + "|".join(key_parts)
+            stream = grouped.setdefault(
+                key,
+                StreamRecord(
+                    stream_id="",
+                    conversation_id=key,
+                    protocol=p.protocol or "UDP",
+                    src_ip=key_parts[0],
+                    src_port=key_parts[1],
+                    dst_ip=key_parts[2],
+                    dst_port=key_parts[3],
+                    start_time=p.timestamp,
+                    end_time=p.timestamp,
+                    kind="udp_conversation",
+                    frame_start=p.frame_number,
+                    frame_end=p.frame_number,
+                    tags=["udp"],
+                ),
+            )
+            if stream.protocol in {"", "UDP"} and p.protocol and p.protocol != "UDP":
+                stream.protocol = p.protocol
+            tag = (p.protocol or "udp").lower()
+            if tag not in stream.tags:
+                stream.tags.append(tag)
+        else:
             continue
-        stream = grouped.setdefault(
-            p.tcp_stream,
-            StreamRecord(
-                stream_id=p.tcp_stream,
-                protocol=p.transport or p.protocol,
-                src_ip=p.src_ip,
-                src_port=p.src_port,
-                dst_ip=p.dst_ip,
-                dst_port=p.dst_port,
-                start_time=p.timestamp,
-                end_time=p.timestamp,
-            ),
-        )
         stream.packet_count += 1
         stream.byte_count += p.length
         stream.start_time = min(stream.start_time, p.timestamp)
         stream.end_time = max(stream.end_time, p.timestamp)
+        stream.frame_start = min(stream.frame_start or p.frame_number, p.frame_number)
+        stream.frame_end = max(stream.frame_end or p.frame_number, p.frame_number)
     return sorted(grouped.values(), key=lambda s: s.byte_count, reverse=True)
+
+
+def udp_conversation_key(packet: PacketRecord) -> tuple[str, str, str, str, str]:
+    left = (packet.src_ip, packet.src_port)
+    right = (packet.dst_ip, packet.dst_port)
+    protocol = packet.protocol or packet.transport or "UDP"
+    if left <= right:
+        return (packet.src_ip, packet.src_port, packet.dst_ip, packet.dst_port, protocol)
+    return (packet.dst_ip, packet.dst_port, packet.src_ip, packet.src_port, protocol)
 
 
 def payload_sources(packets: list[PacketRecord]) -> tuple[list[tuple[str, str]], dict[str, bytes]]:
@@ -339,6 +599,7 @@ def run_detectors(report: AnalysisReport, packets: list[PacketRecord], strings: 
     findings.extend(http_findings(report.http_records))
     findings.extend(smtp_findings(report.smtp_records, strings))
     findings.extend(mqtt_findings(report.mqtt_records))
+    findings.extend(tftp_findings(report.tftp_transfers))
     findings.extend(dns_visibility_findings(packets, report.dns_records))
     findings.extend(dns_findings(report.dns_records))
     findings.extend(secret_findings(strings, options))
@@ -579,6 +840,43 @@ def mqtt_findings(records: list[MqttRecord]) -> list[Finding]:
             record.src_ip,
             record.dst_ip,
             stream=record.stream_id,
+        ))
+    return findings
+
+
+def tftp_findings(transfers: list[TftpTransferRecord]) -> list[Finding]:
+    findings = []
+    for transfer in transfers[:30]:
+        details = []
+        if transfer.filename:
+            details.append(f"file={transfer.filename}")
+        details.append(f"direction={transfer.direction}")
+        details.append(f"bytes={transfer.byte_count}")
+        details.append(f"completeness={transfer.completeness}")
+        if transfer.error:
+            details.append(f"error={transfer.error}")
+        score = 35
+        if transfer.filename:
+            score += 15
+        if transfer.byte_count:
+            score += 15
+        if transfer.completeness == "complete":
+            score += 10
+        if transfer.completeness in {"incomplete", "error"}:
+            score -= 10
+        if transfer.filename.lower().endswith((".bin", ".img", ".trx", ".elf", ".exe", ".zip", ".gz", ".tar")):
+            score += 10
+        score = max(20, min(85, score))
+        findings.append(make_finding(
+            "TFTP file transfer observed",
+            "tftp",
+            score,
+            [f"{transfer.transfer_id}: " + "; ".join(details)],
+            "TFTP commonly carries firmware, boot images, configuration files, and CTF payloads over UDP.",
+            "Run pcat tftp to inspect transfer metadata and export recoverable objects.",
+            transfer.client_ip,
+            transfer.server_ip,
+            related=transfer.transfer_id,
         ))
     return findings
 
@@ -1015,8 +1313,13 @@ def maybe_apply_ml(report: AnalysisReport, options: AnalyzeOptions) -> None:
 def score_streams(streams: list[StreamRecord], findings: list[Finding]) -> None:
     related = Counter(f.related.replace("tcp.stream:", "") for f in findings if f.related.startswith("tcp.stream:"))
     for stream in streams:
-        stream.interest_score = min(100, int(stream.byte_count / 1000) + related.get(stream.stream_id, 0) * 20)
-        if related.get(stream.stream_id):
+        base = int(stream.byte_count / 1000)
+        if stream.kind == "tcp_stream":
+            base += related.get(stream.stream_id, 0) * 20
+        if stream.kind == "udp_conversation" and stream.protocol.upper() in {"TFTP", "DNS", "MDNS", "LLMNR", "SSDP"}:
+            base += 15
+        stream.interest_score = min(100, base)
+        if stream.kind == "tcp_stream" and related.get(stream.stream_id):
             stream.tags.append("finding-related")
         if stream.byte_count > 100000:
             stream.tags.append("large")

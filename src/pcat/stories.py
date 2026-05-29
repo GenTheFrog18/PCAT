@@ -13,6 +13,7 @@ SEVERITY_RANK = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}
 def build_stories(report: AnalysisReport, packets: list[PacketRecord]) -> list[EvidenceStory]:
     stories: list[EvidenceStory] = []
     stories.extend(artifact_stories(report))
+    stories.extend(tftp_story(report))
     stories.extend(http_story(report))
     stories.extend(dns_story(report))
     stories.extend(mqtt_story(report))
@@ -155,6 +156,47 @@ def mqtt_story(report: AnalysisReport) -> list[EvidenceStory]:
     )]
 
 
+def tftp_story(report: AnalysisReport) -> list[EvidenceStory]:
+    if not report.tftp_records and not report.tftp_transfers:
+        return []
+    complete = [item for item in report.tftp_transfers if item.completeness == "complete" and item.byte_count]
+    incomplete = [item for item in report.tftp_transfers if item.completeness in {"incomplete", "error", "unknown"}]
+    filenames = Counter(item.filename or "(unknown)" for item in report.tftp_transfers)
+    top = sorted(report.tftp_transfers, key=lambda item: (item.byte_count, item.filename), reverse=True)[:5]
+    severity = "high" if complete else "medium" if report.tftp_transfers else "low"
+    limitations = []
+    if incomplete:
+        limitations.append("Some TFTP transfers are incomplete, errored, or lack a final short block; exported bytes may need manual validation.")
+    command_parts = ["pcat", "tftp", "-i", report.summary.file, "--json"]
+    if complete:
+        command_parts = ["pcat", "tftp", "-i", report.summary.file, "--export"]
+    return [EvidenceStory(
+        id=stable_id("story", "tftp", len(report.tftp_records), ",".join(item.transfer_id for item in top)),
+        kind="tftp_transfer_story",
+        title=f"TFTP transfer activity observed ({len(report.tftp_transfers)} transfer(s))",
+        why_it_matters="TFTP is a simple UDP file-transfer protocol often used for firmware, boot images, configs, and CTF payloads.",
+        severity=severity,
+        confidence="high" if report.tftp_transfers else "medium",
+        supporting_evidence_ids=evidence_ids_by_type(report.evidence, {"tftp_packet", "tftp_transfer"}),
+        anchors={
+            "filenames": dict(filenames.most_common(10)),
+            "complete_transfers": len(complete),
+            "incomplete_or_unknown_transfers": len(incomplete),
+            "top_transfers": [
+                {
+                    "transfer_id": item.transfer_id,
+                    "filename": item.filename,
+                    "byte_count": item.byte_count,
+                    "completeness": item.completeness,
+                }
+                for item in top
+            ],
+        },
+        recommended_next_command=format_shell_command(command_parts),
+        limitations=limitations,
+    )]
+
+
 def icmp_story(report: AnalysisReport, packets: list[PacketRecord]) -> list[EvidenceStory]:
     icmp_packets = [packet for packet in packets if packet.transport == "ICMP" or packet.protocol == "ICMP"]
     icmp_payload_ids = evidence_ids_by_type(report.evidence, {"icmp_payload"})
@@ -256,6 +298,8 @@ def collect_limitations(report: AnalysisReport, packets: list[PacketRecord]) -> 
         limitations.append("Very small captures may not contain enough context for confident prioritization.")
     if any(finding.title == "DNS traffic needs manual parser review" for finding in report.findings):
         limitations.append("DNS-like traffic was observed, but useful DNS records were not fully extracted.")
+    if any(transfer.completeness in {"incomplete", "error", "unknown"} for transfer in report.tftp_transfers):
+        limitations.append("Some TFTP transfers may not be complete enough for confident export.")
     for story in report.stories:
         limitations.extend(story.limitations)
     return unique(limitations)[:6]
@@ -269,6 +313,8 @@ def fallback_commands(report: AnalysisReport) -> list[str]:
     ]
     if report.artifacts:
         commands.append(format_shell_command(["pcat", "artifacts", "-i", file, "--json"]))
+    if report.tftp_transfers:
+        commands.append(format_shell_command(["pcat", "tftp", "-i", file, "--json"]))
     return commands
 
 

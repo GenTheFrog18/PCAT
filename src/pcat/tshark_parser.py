@@ -64,6 +64,18 @@ FIELDS = [
     "mqtt.msg_text",
     "mqtt.username",
     "mqtt.passwd",
+    "tftp.opcode",
+    "tftp.source_file",
+    "tftp.destination_file",
+    "tftp.request_frame",
+    "tftp.type",
+    "tftp.block",
+    "tftp.block.full",
+    "tftp.error.code",
+    "tftp.error.message",
+    "tftp.data",
+    "tftp.reassembled.data",
+    "tftp.reassembled.length",
 ]
 
 
@@ -170,6 +182,18 @@ def parse_packets(path: Path) -> list[PacketRecord]:
                 mqtt_message=first(row.get("mqtt.msg_text", "")),
                 mqtt_username=first(row.get("mqtt.username", "")),
                 mqtt_password=first(row.get("mqtt.passwd", "")),
+                tftp_opcode=first(row.get("tftp.opcode", "")),
+                tftp_source_file=first(row.get("tftp.source_file", "")),
+                tftp_destination_file=first(row.get("tftp.destination_file", "")),
+                tftp_request_frame=first(row.get("tftp.request_frame", "")),
+                tftp_type=first(row.get("tftp.type", "")),
+                tftp_block=first(row.get("tftp.block", "")),
+                tftp_block_full=first(row.get("tftp.block.full", "")),
+                tftp_error_code=first(row.get("tftp.error.code", "")),
+                tftp_error_message=first(row.get("tftp.error.message", "")),
+                tftp_data=first(row.get("tftp.data", "")),
+                tftp_reassembled_data=first(row.get("tftp.reassembled.data", "")),
+                tftp_reassembled_length=first(row.get("tftp.reassembled.length", "")),
             )
         )
     if not packets:
@@ -220,6 +244,7 @@ def choose_protocol(column_protocol: str, protocol_stack: str, src_port: str = "
     stack = [item.lower() for item in protocol_stack.split(":") if item]
     preferred = [
         ("mqtt", "MQTT"),
+        ("tftp", "TFTP"),
         ("smtp", "SMTP"),
         ("http", "HTTP"),
         ("http2", "HTTP2"),

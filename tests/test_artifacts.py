@@ -93,6 +93,27 @@ def test_signature_only_artifact_is_candidate(tmp_path):
     assert artifacts[0].certainty == "candidate"
 
 
+def test_pe_artifact_is_detected_and_ranked(tmp_path):
+    sample = tmp_path / "sample.pcap"
+    pe = bytearray(b"MZ" + b"\x00" * 0x300)
+    pe[0x3C:0x40] = (0x80).to_bytes(4, "little")
+    pe[0x80:0x84] = b"PE\x00\x00"
+    pe[0x84:0x86] = (0x14C).to_bytes(2, "little")
+    pe[0x86:0x88] = (1).to_bytes(2, "little")
+    pe[0x94:0x96] = (0xE0).to_bytes(2, "little")
+    section = 0x80 + 24 + 0xE0
+    pe[section : section + 8] = b".text\x00\x00\x00"
+    pe[section + 16 : section + 20] = (4).to_bytes(4, "little")
+    pe[section + 20 : section + 24] = (0x200).to_bytes(4, "little")
+    pe[0x200:0x204] = b"\x90\x90\xc3\x00"
+    sample.write_bytes(bytes(pe))
+    artifacts = detect_artifacts(sample, include_raw=True)
+    assert artifacts[0].kind == "pe"
+    assert artifacts[0].validation == "validated"
+    assert artifacts[0].certainty == "confirmed"
+    assert artifacts[0].score >= 50
+
+
 def test_write_artifact_manifest(tmp_path):
     sample = tmp_path / "sample.pcap"
     sample.write_bytes(b"noise%PDF-1.7\nbody\n%%EOFtail")

@@ -2,7 +2,7 @@
 
 Date: 2026-05-22
 
-This document captures CTF-oriented feedback from the PCAT `0.2.2` test cycle. It is intentionally separate from the V2.3 trust-hardening work, which now covers timeline, artifact, extraction, search, and output-noise issues in `0.2.3`. The CTF work below should happen later, after PCAT's general triage output is reliable.
+This document captures CTF-oriented feedback from the PCAT `0.2.2` test cycle. It is intentionally separate from the V2.3 trust-hardening work and the V2.4 command/TFTP workflow work. The CTF work below should happen later, after PCAT's general triage output is reliable.
 
 ## Product Position
 
@@ -179,6 +179,6 @@ Speculative decodes should move to:
 
 V2.3 must happen first because CTF output needs trustworthy artifact, timeline, extraction, search, and ranking semantics.
 
-V2.4 protocol views should happen before or alongside the CTF update because DNS/MQTT/TFTP/HTTP improvements are useful for both CTF and general triage.
+V2.4 now provides the first TFTP/UDP workflow primitives. Remaining DNS/MQTT/HTTP protocol improvements should happen before or alongside the broader CTF update because those improvements are useful for both CTF and general triage.
 
 The CTF update should reuse V2.3/V2.4 primitives instead of inventing a separate CTF-only pipeline.

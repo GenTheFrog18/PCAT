@@ -568,71 +568,71 @@ Primary work:
 
 Deferred from this patch:
 
-- PE/MZ executable carving and ranking.
 - HTTP exploit-chain/story ranking.
 - MIME/TNEF attachment export.
-- TFTP reassembly/export.
-- Command consolidation for `files`, `suspicious`, and `search`.
+- MQTT payload export.
+- DNS clustering and encoded-label grouping.
 
-### V2.4: Protocol-Specific Views And Reassembly
+### V2.4: Command Consolidation And TFTP/UDP Protocol Workflow
 
 Goal:
 
-Make protocol views useful as triage workflows, not just row dumps, and add focused object/message reconstruction where it directly shortens investigation.
+Reduce confusing command overlap, make search work across PCAT's evidence model, and fix the most painful UDP/TFTP workflow gaps without turning this release into a full protocol-reassembly project.
+
+Status:
+
+Implemented in schema/tool version `0.2.4`.
 
 Primary work:
 
-- DNS clustering:
-  - top suffixes
-  - response-code distribution
-  - NXDOMAIN clusters
-  - random-label hints
-  - source attribution
-  - possible tunneling indicators
-- HTTP grouping:
-  - host/path clusters
-  - stream grouping
-  - object candidates
-  - multipart boundaries
-  - content-type summaries
-  - likely extraction targets
-  - short unusual text responses promoted above bulk traffic
-  - clearer HTTP object accounting
-- MQTT view:
-  - topic table
-  - broker/client endpoints
-  - message previews
-  - payload text and payload hex
-  - stream/frame filters
-  - optional payload export such as `mqtt.csv` and payload text files
-- TFTP view:
-  - transfer filename extraction
-  - block ordering
-  - object reassembly/export when enough blocks are present
-  - completeness status for transferred objects
-- UDP stream/conversation handling:
-  - rank repeated UDP conversations such as TFTP flows
-  - expose conversation keys even when TCP stream IDs do not exist
-- ICMP view:
-  - endpoint pairs
-  - type/code distribution
-  - payload presence
-  - timing and repeated echo behavior
-  - possible ordinary/covert/bulk signal classification
+- Consolidate artifact-facing commands:
+  - Keep `artifacts` as the main command.
+  - Keep `files` and `suspicious` as compatibility aliases with deprecation warnings.
+  - Add artifact filters for type, score, extractability, rejected-hit visibility, and suspicious ranking.
+- Make `search` a global evidence search:
+  - Search strings.
+  - Search decoded values.
+  - Search protocol records.
+  - Search evidence records.
+  - Search findings.
+  - Search artifact records.
+  - Keep string-source controls for raw/packet/all where they still apply.
+- Add UDP conversation handling to `streams`:
+  - Preserve TCP stream rows.
+  - Add UDP conversation rows for non-TCP workflows.
+  - Include frame bounds, protocol labels, packet counts, byte counts, and interest score.
+- Add TFTP support:
+  - Parse TFTP request/data/error fields from TShark.
+  - Build packet-level TFTP records.
+  - Group TFTP transfers with filename, direction, client/server, request frame, data frames, byte count, block count, and completeness.
+  - Export complete transferred objects to `<out>/tftp_objects/`.
+  - Allow explicit export of incomplete/unknown transfers with `--include-incomplete`.
+  - Add TFTP evidence, stories, findings, CSV output, hunt output, and `pcat tftp`.
+- Add PE/MZ artifact support:
+  - Detect PE/MZ signatures.
+  - Parse PE section metadata well enough to avoid arbitrary max-size carving when a file end can be inferred.
+  - Score PE artifacts as high-value executable leads.
 
 Why this matters:
 
-Protocol-specific commands should reduce investigation time, not just expose parsed rows.
+Tester feedback showed that `files`, `suspicious`, and `artifacts` overlapped too much; `search` was too string-shaped for a tool that now has evidence records; `streams` was weak on UDP-only captures; and TFTP was a real CTF/general workflow gap. This release focuses on those concrete workflow failures.
 
 Exit criteria:
 
-- `dns` gives cluster summaries.
-- `http` gives stream/object summaries.
-- MQTT topics are promoted early.
-- MQTT messages/payloads can be reviewed without manually writing TShark field commands.
+- `artifacts` can replace normal use of `files` and `suspicious`.
+- Deprecated aliases still work and tell users what command to move to.
+- `search --scope` can find protocol/evidence/artifact/finding text, not only raw strings.
+- UDP conversations appear in `pcat streams`.
 - TFTP transferred objects can be reassembled/exported with completeness metadata.
-- UDP/TFTP conversations appear in stream/conversation-style output.
-- ICMP-heavy captures get a real ICMP trail summary.
+- PE/MZ artifact candidates are detected and ranked.
+
+Deferred from the original broad V2.4 idea:
+
+- DNS clustering, encoded-label grouping, and tunneling summaries.
+- HTTP stream/object grouping beyond the existing HTTP view and `extract --http`.
+- MQTT topic/message payload view and export.
+- ICMP trail summaries beyond existing ICMP payload/banner findings.
+- Full TCP stream reassembly.
 
 ### V2.5: Case Cache And Workflow Reuse
 
@@ -761,9 +761,6 @@ Exit criteria:
 - Overlapping ZIP-like candidates produce repeated high-priority findings.
 - Raw-carved hits need clearer lower-confidence labeling.
 - `confirmed/validated` can still be misleading when a packet-local fragment has a valid header but is truncated or unusable.
-- Raw-file hits can be recommended without the required `--include-raw` flag.
-- HTTP object export can write files while artifact output still says zero artifacts extracted.
-- Rejected gzip/BMP/JPG hits can flood terminal output.
 
 ### Product UX
 
@@ -772,14 +769,11 @@ Exit criteria:
 - MQTT topic evidence buried too deep.
 - ICMP traffic not summarized into actionable trail.
 - USB/Bluetooth/mixed captures lack clear handoff language.
-- Timeline output can show `0.000000` for useful events, making chronology misleading.
 - Default `dns`/`http` limits can hide the useful records unless users raise `--top` dramatically.
-- `search` and `strings --grep` can appear inconsistent.
 - Speculative decoded-looking strings can dominate `hunt`.
 
 ### Protocol Workflow Gaps
 
-- TFTP transfers are identified as traffic/strings but not reassembled/exported.
 - MQTT topics can be surfaced, but messages and payload chunks need a clean protocol view/export.
 - DNS labels that look encoded are not grouped/ranked/decoded.
 - USB/HID captures need explicit keyboard/interface triage or a precise handoff.
@@ -818,11 +812,10 @@ Later V2.x tests:
 - raw artifact recommendation includes `--include-raw`.
 - HTTP object export reports written objects separately from artifact carving.
 - rejected artifact grouping in stdout.
-- `search` and `strings --grep` source consistency.
 - DNS cluster summary.
 - HTTP object/stream grouping.
 - MQTT payload table/export.
-- TFTP transfer reassembly/export.
+- TFTP incomplete-transfer fixture coverage beyond unit-level grouping/export tests.
 
 ### Decision: Regression Tests Should Follow Real Reports
 
@@ -924,10 +917,11 @@ The CLI and structured case folder are the current product. A GUI would add surf
 1. V2.1 intake, parser, DNS, and CLI error fixes.
 2. V2.2 analyst briefing, limitation language, and evidence stories.
 3. V2.3 trust hardening: timeline, artifact completeness, extraction accounting, stdout grouping, search consistency, and noise reduction.
-4. V2.4 protocol-specific views and reassembly: DNS ranking, HTTP object clarity, MQTT payloads, TFTP export, UDP conversations, and ICMP trails.
-5. Case caching and workflow reuse.
-6. Expanded CTF clue normalization after the core workflow is stronger.
-7. External integrations.
+4. V2.4 command consolidation and TFTP/UDP workflow: implemented in `0.2.4`.
+5. Remaining protocol workflow: DNS ranking, HTTP object/story clarity, MQTT payloads, and ICMP trails.
+6. Case caching and workflow reuse.
+7. Expanded CTF clue normalization after the core workflow is stronger.
+8. External integrations.
 
 ## Guiding Rule
 
